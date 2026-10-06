@@ -4305,6 +4305,103 @@ return {
 		return null;
 	},
 		
+	_repairDiagramRegistryEntries: function(rootPackage, analysisPackage, registryIndex)
+	{
+		if (!rootPackage || !analysisPackage || !analysisPackage.Element)
+			return false;
+
+		var sourceGuid = addin.utils.trim(addin.repositoryService.getTaggedValue(
+			analysisPackage.Element,
+			addin.fbaConstants.TAG_SOURCE_ANALYSIS_ELEMENT_GUID
+		));
+
+		var definitions = this._getOperationDefinitions();
+		var analysisDefinition = null;
+
+		for (var i = 0; i < definitions.length; i++)
+		{
+			if (definitions[i] && addin.utils.equalsIgnoreCase(definitions[i].guid, sourceGuid))
+			{
+				analysisDefinition = definitions[i];
+				break;
+			}
+		}
+
+		if (!analysisDefinition || !analysisDefinition.element)
+			return false;
+
+		var diagramDefinitions = this._loadDiagramDefinitions(analysisDefinition.element);
+		var recognizedDiagramGuids = {};
+		var repairedCount = 0;
+		var registryPackage = registryIndex && registryIndex.registryPackage
+			? registryIndex.registryPackage
+			: this._resolveDiagramRegistryPackage(rootPackage);
+
+		if (!registryPackage)
+			return false;
+
+		analysisPackage.Diagrams.Refresh();
+
+		for (var d = 0; d < diagramDefinitions.length; d++)
+		{
+			var diagramDefinition = diagramDefinitions[d];
+			if (!diagramDefinition) continue;
+
+			for (var j = 0; j < analysisPackage.Diagrams.Count; j++)
+			{
+				var diagram = analysisPackage.Diagrams.GetAt(j);
+				if (!diagram) continue;
+
+				var diagramGuid = addin.utils.normalizeGuid(diagram.DiagramGUID);
+				if (recognizedDiagramGuids[diagramGuid]) continue;
+
+				if (!addin.utils.equalsIgnoreCase(
+					addin.utils.trim(diagram.MetaType),
+					addin.utils.trim(diagramDefinition.metaType)
+				)) continue;
+
+				recognizedDiagramGuids[diagramGuid] = true;
+
+				var entry = this._findDiagramRegistryEntryByGeneratedGuid(
+					registryPackage,
+					diagram.DiagramGUID,
+					registryIndex
+				);
+
+				if (entry) continue;
+
+				entry = this._ensureDiagramRegistryEntry(
+					rootPackage,
+					diagram,
+					diagramDefinition,
+					registryIndex
+				);
+
+				if (!entry)
+				return false;
+
+				repairedCount++;
+
+				addin.logger.info(
+					"DGC d'instance réparé"
+					+ " | Package=" + analysisPackage.Name
+					+ " | Diagram=" + diagram.Name
+					+ " | DiagramGUID=" + diagram.DiagramGUID
+					+ " | DGC=" + entry.Name
+					+ " | DGCGUID=" + entry.ElementGUID
+				);
+			}
+		}
+
+		addin.logger.info(
+			"REPAIR DGC terminé"
+			+ " | Package=" + analysisPackage.Name
+			+ " | Created=" + repairedCount
+		);
+
+		return true;
+	},
+
 	_ensureDiagramRegistryEntry: function(
 		rootPackage,
 		generatedDiagram,
@@ -18342,13 +18439,11 @@ return {
 
 		if (initializationState == "INITIALIZED")
 		{
-			addin.logger.info(
-				"REPAIR non nécessaire"
-				+ " | Package=" + analysisPackage.Name
-				+ " | State=INITIALIZED"
-				+ " | Action=SKIP"
-			);
-
+			if (!this._repairDiagramRegistryEntries(analysisRoot, analysisPackage, diagramRegistryIndex))
+			{
+				addin.logger.error("REPAIR DGC en échec | Package=" + analysisPackage.Name);
+				return false;
+			}
 			return true;
 		}
 
