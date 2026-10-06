@@ -16061,7 +16061,7 @@ return {
 								analysisPackage.PackageGUID
 							);
 
-						generatedDiagramObjectResult.recognizedByMetamodel = true;
+						
 
 
 						diagramCheckResult.diagram.guid =
@@ -16564,7 +16564,7 @@ return {
 									analysisPackage.PackageGUID
 								);
 
-							existingDiagramObjectResult.recognizedByMetamodel = true;
+							
 
 
 							addin.logger.info(
@@ -17411,7 +17411,7 @@ return {
 			if (
 				!storageDiagramObject ||
 				storageDiagramObject.objectType != "DIAGRAM" ||
-				storageDiagramObject.recognizedByMetamodel !== true
+				!recognizedDiagramGuids[addin.utils.normalizeGuid(storageDiagramObject.guid)]
 			)
 			{
 				continue;
