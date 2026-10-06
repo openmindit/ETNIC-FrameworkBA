@@ -4305,6 +4305,53 @@ return {
 		return null;
 	},
 		
+	_repairDiagramName: function(diagram, effectiveConfig)
+	{
+		var issues = this._checkDiagramName(diagram, effectiveConfig);
+		if (!issues || issues.length === 0)
+			return true;
+
+		var prefix = addin.utils.trim(effectiveConfig.namePrefix || "");
+		var oldName = diagram.Name;
+		var name = addin.utils.trim(oldName || "");
+		var technicalMarker = "";
+
+		if (name.charAt(0) === "_")
+		{
+			technicalMarker = "_";
+			name = addin.utils.trim(name.substring(1));
+		}
+
+		// Retirer uniquement les occurrences initiales du préfixe connu.
+		// Le libellé métier et le marqueur technique sont conservés.
+		while (
+			name.toLowerCase() === prefix.toLowerCase() ||
+			name.substring(0, prefix.length + 1).toLowerCase() ===
+				(prefix + " ").toLowerCase()
+		)
+		{
+			name = addin.utils.trim(name.substring(prefix.length));
+		}
+
+		diagram.Name = technicalMarker + prefix + " " + name;
+
+		if (!diagram.Update())
+		{
+			diagram.Name = oldName;
+			addin.logger.error("REPAIR nom de diagramme en échec | DiagramGUID=" + diagram.DiagramGUID);
+			return false;
+		}
+
+		addin.logger.info(
+			"Nom de diagramme réparé"
+			+ " | DiagramGUID=" + diagram.DiagramGUID
+			+ " | Before=" + oldName
+			+ " | After=" + diagram.Name
+		);
+
+		return true;
+	},
+
 	_repairDiagramRegistryEntries: function(rootPackage, analysisPackage, registryIndex)
 	{
 		if (!rootPackage || !analysisPackage || !analysisPackage.Element)
@@ -4347,6 +4394,9 @@ return {
 			var diagramDefinition = diagramDefinitions[d];
 			if (!diagramDefinition) continue;
 
+			var effectiveConfig = this._resolveEffectiveDiagramConfig(diagramDefinition);
+			if (!effectiveConfig) return false;
+
 			for (var j = 0; j < analysisPackage.Diagrams.Count; j++)
 			{
 				var diagram = analysisPackage.Diagrams.GetAt(j);
@@ -4362,13 +4412,36 @@ return {
 
 				recognizedDiagramGuids[diagramGuid] = true;
 
+				if (!this._repairDiagramName(diagram, effectiveConfig))
+					return false;
+
 				var entry = this._findDiagramRegistryEntryByGeneratedGuid(
 					registryPackage,
 					diagram.DiagramGUID,
 					registryIndex
 				);
 
-				if (entry) continue;
+				if (entry)
+				{
+					if (entry.Name !== diagram.Name)
+					{
+						var oldRegistryName = entry.Name;
+						entry.Name = diagram.Name;
+						if (!entry.Update())
+						{
+							entry.Name = oldRegistryName;
+							addin.logger.error("REPAIR nom DGC en échec | DGCGUID=" + entry.ElementGUID);
+							return false;
+						}
+						addin.logger.info(
+							"Nom DGC synchronisé"
+							+ " | DiagramGUID=" + diagram.DiagramGUID
+							+ " | DGCGUID=" + entry.ElementGUID
+							+ " | Name=" + entry.Name
+						);
+					}
+					continue;
+				}
 
 				entry = this._ensureDiagramRegistryEntry(
 					rootPackage,
