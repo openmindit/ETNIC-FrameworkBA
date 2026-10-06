@@ -16061,11 +16061,7 @@ return {
 								analysisPackage.PackageGUID
 							);
 
-						if (generatedDiagramObjectResult)
-						{
-							generatedDiagramObjectResult.checkStorageGuid =
-								effectiveConfig.sourceConfigGuid;
-						}
+						/* DGC d'instance résolu après les contrôles via DiagramGUID. */
 
 
 						diagramCheckResult.diagram.guid =
@@ -16568,11 +16564,7 @@ return {
 									analysisPackage.PackageGUID
 								);
 
-							if (existingDiagramObjectResult)
-							{
-								existingDiagramObjectResult.checkStorageGuid =
-									effectiveConfig.sourceConfigGuid;
-							}
+							/* DGC d'instance résolu après les contrôles via DiagramGUID. */
 
 
 							addin.logger.info(
@@ -17399,8 +17391,110 @@ return {
 
 
 		// =====================================================
+		// RESOLUTION DGC D'INSTANCE - DIAGRAMMES RECONNUS
+		// ETNIC_Generated_Diagram_GUID = DiagramGUID.
+		// =====================================================
+
+		var checkDiagramRegistryPackage =
+			this._resolveDiagramRegistryPackage(
+				rootPackage
+			);
+
+		for (var storageDiagramGuid in result.objects)
+		{
+			if (!result.objects.hasOwnProperty(storageDiagramGuid))
+				continue;
+
+			var storageDiagramObject =
+				result.objects[storageDiagramGuid];
+
+			if (
+				!storageDiagramObject ||
+				storageDiagramObject.objectType != "DIAGRAM"
+			)
+			{
+				continue;
+			}
+
+			var storageDiagram =
+				addin.repositoryService.getDiagramByGuid(
+					storageDiagramObject.guid
+				);
+
+			if (!storageDiagram)
+				continue;
+
+			var diagramRegistryEntry =
+				this._findDiagramRegistryEntryByGeneratedGuid(
+					checkDiagramRegistryPackage,
+					storageDiagram.DiagramGUID
+				);
+
+			if (diagramRegistryEntry)
+			{
+				storageDiagramObject.checkStorageGuid =
+					diagramRegistryEntry.ElementGUID;
+
+				addin.logger.info(
+					"DGC d'instance résolu"
+					+ " | Diagram=" + storageDiagram.Name
+					+ " | DiagramGUID=" + storageDiagram.DiagramGUID
+					+ " | DGC=" + diagramRegistryEntry.Name
+					+ " | DGCGUID=" + diagramRegistryEntry.ElementGUID
+				);
+
+				continue;
+			}
+
+			var diagramRegistryMissingIssue =
+			{
+				code:
+					addin.fbaConstants
+						.CHECK_ISSUE_DIAGRAM_REGISTRY_MISSING,
+
+				severity:
+					addin.fbaConstants
+						.CHECK_SEVERITY_ERROR,
+
+				action:
+					addin.fbaConstants
+						.CHECK_ACTION_REPAIR,
+
+				objectType:
+					"DIAGRAM",
+
+				objectGuid:
+					storageDiagram.DiagramGUID,
+
+				objectName:
+					storageDiagram.Name,
+
+				packageGuid:
+					analysisPackage.PackageGUID,
+
+				message:
+					"Le diagramme reconnu par le métamodèle "
+					+ "ne possède pas de DGC d'instance associé "
+					+ "par ETNIC_Generated_Diagram_GUID."
+			};
+
+			this._registerCheckIssue(
+				result,
+				diagramRegistryMissingIssue
+			);
+
+			addin.logger.warning(
+				"DGC d'instance manquant"
+				+ " | Diagram=" + storageDiagram.Name
+				+ " | DiagramGUID=" + storageDiagram.DiagramGUID
+				+ " | Action=REPAIR"
+			);
+		}
+
+
+		// =====================================================
 		// PERSISTANCE DISTRIBUEE - DIAGRAMMES RECONNUS
-		// Le DGC effectif porte le snapshot du diagramme.
+		// Le DGC d'instance porte le snapshot du diagramme.
 		// =====================================================
 
 		for (var checkedDiagramGuid in result.objects)
