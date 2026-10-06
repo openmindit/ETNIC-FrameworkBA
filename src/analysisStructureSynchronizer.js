@@ -12199,13 +12199,26 @@ return {
 			objectGuid = object.PackageGUID;
 		}
 
-		if (!targetElement || addin.utils.isEmpty(objectGuid))
+		if (
+			!targetElement &&
+			addin.utils.isEmpty(object.DiagramGUID)
+		)
 		{
 			addin.logger.warning(
 				"Persistance CHECK non supportée pour l'objet reçu"
 			);
 
 			return false;
+		}
+
+		/*
+		 * Un Diagram EA ne porte pas directement le Tagged Value CHECK.
+		 * Son résultat est persisté sur le DGC effectif qui le configure.
+		 * Le hash reste calculé sur le diagramme contrôlé.
+		 */
+		if (!addin.utils.isEmpty(object.DiagramGUID))
+		{
+			objectGuid = object.DiagramGUID;
 		}
 
 		var normalizedGuid =
@@ -12226,6 +12239,37 @@ return {
 			);
 
 			return false;
+		}
+
+		if (!addin.utils.isEmpty(object.DiagramGUID))
+		{
+			if (addin.utils.isEmpty(objectResult.checkStorageGuid))
+			{
+				addin.logger.warning(
+					"Persistance CHECK diagramme impossible"
+					+ " | DGC introuvable"
+					+ " | Diagram=" + object.Name
+					+ " | GUID=" + object.DiagramGUID
+				);
+
+				return false;
+			}
+
+			targetElement =
+				addin.repositoryService.getElementByGuid(
+					objectResult.checkStorageGuid
+				);
+
+			if (!targetElement)
+			{
+				addin.logger.warning(
+					"Persistance CHECK diagramme impossible"
+					+ " | DGC=" + objectResult.checkStorageGuid
+					+ " | Diagram=" + object.Name
+				);
+
+				return false;
+			}
 		}
 
 		var objectRuleResults = [];
@@ -15951,6 +15995,12 @@ return {
 								analysisPackage.PackageGUID
 							);
 
+						if (generatedDiagramObjectResult)
+						{
+							generatedDiagramObjectResult.checkStorageGuid =
+								effectiveConfig.sourceConfigGuid;
+						}
+
 
 						diagramCheckResult.diagram.guid =
 							generatedDiagram.DiagramGUID;
@@ -16451,6 +16501,12 @@ return {
 									existingDiagram.Name,
 									analysisPackage.PackageGUID
 								);
+
+							if (existingDiagramObjectResult)
+							{
+								existingDiagramObjectResult.checkStorageGuid =
+									effectiveConfig.sourceConfigGuid;
+							}
 
 
 							addin.logger.info(
@@ -17271,6 +17327,55 @@ return {
 					"Persistance CHECK artefact échouée"
 					+ " | Artifact=" + checkedArtifact.Name
 					+ " | GUID=" + checkedArtifact.ElementGUID
+				);
+			}
+		}
+
+
+		// =====================================================
+		// PERSISTANCE DISTRIBUEE - DIAGRAMMES RECONNUS
+		// Le DGC effectif porte le snapshot du diagramme.
+		// =====================================================
+
+		for (var checkedDiagramGuid in result.objects)
+		{
+			if (!result.objects.hasOwnProperty(checkedDiagramGuid))
+				continue;
+
+			var checkedDiagramObject =
+				result.objects[checkedDiagramGuid];
+
+			if (
+				!checkedDiagramObject ||
+				checkedDiagramObject.objectType != "DIAGRAM" ||
+				addin.utils.isEmpty(checkedDiagramObject.checkStorageGuid)
+			)
+			{
+				continue;
+			}
+
+			var checkedDiagram =
+				addin.repositoryService.getDiagramByGuid(
+					checkedDiagramObject.guid
+				);
+
+			if (!checkedDiagram)
+			{
+				result.success = false;
+				addin.logger.error(
+					"Persistance CHECK diagramme impossible"
+					+ " | GUID=" + checkedDiagramObject.guid
+				);
+				continue;
+			}
+
+			if (!this.persistCheckResult(checkedDiagram, result))
+			{
+				result.success = false;
+				addin.logger.error(
+					"Persistance CHECK diagramme échouée"
+					+ " | Diagram=" + checkedDiagram.Name
+					+ " | GUID=" + checkedDiagram.DiagramGUID
 				);
 			}
 		}
