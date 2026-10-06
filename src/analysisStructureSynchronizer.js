@@ -12296,20 +12296,52 @@ return {
 				json
 			);
 
-		if (success)
+		if (!success)
+			return false;
+
+		var persistedJson =
+			addin.repositoryService.getTaggedValueMemo(
+				targetElement,
+				addin.fbaConstants.TAG_CHECK_RESULT
+			);
+
+		var identical =
+			persistedJson === json;
+
+		addin.logger.info(
+			"Vérification CHECK objet"
+			+ " | Type=" + snapshot.scope
+			+ " | Name=" + snapshot.object.name
+			+ " | GUID=" + snapshot.object.guid
+			+ " | ExpectedSize=" + json.length
+			+ " | PersistedSize="
+			+ (persistedJson ? persistedJson.length : 0)
+			+ " | Identical=" + identical
+		);
+
+		if (!identical)
 		{
-			addin.logger.info(
-				"CHECK objet persisté"
+			addin.logger.error(
+				"Persistance CHECK objet incomplète"
 				+ " | Type=" + snapshot.scope
 				+ " | Name=" + snapshot.object.name
 				+ " | GUID=" + snapshot.object.guid
-				+ " | Status=" + snapshot.status
-				+ " | SourceHash=" + snapshot.sourceHash
-				+ " | Size=" + json.length
 			);
+
+			return false;
 		}
 
-		return success;
+		addin.logger.info(
+			"CHECK objet persisté"
+			+ " | Type=" + snapshot.scope
+			+ " | Name=" + snapshot.object.name
+			+ " | GUID=" + snapshot.object.guid
+			+ " | Status=" + snapshot.status
+			+ " | SourceHash=" + snapshot.sourceHash
+			+ " | Size=" + json.length
+		);
+
+		return true;
 	},
 
 
