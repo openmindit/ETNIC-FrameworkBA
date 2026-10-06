@@ -12130,6 +12130,15 @@ return {
 
 		if (
 			modified == null &&
+			object.ModifiedDate != null
+		)
+		{
+			modified =
+				object.ModifiedDate;
+		}
+
+		if (
+			modified == null &&
 			object.Element
 		)
 		{
@@ -12184,6 +12193,8 @@ return {
 
 		var targetElement = null;
 		var objectGuid = "";
+		var tagName =
+			addin.fbaConstants.TAG_CHECK_RESULT;
 
 		if (!addin.utils.isEmpty(object.ElementGUID))
 		{
@@ -12197,6 +12208,24 @@ return {
 		{
 			targetElement = object.Element;
 			objectGuid = object.PackageGUID;
+		}
+		else if (!addin.utils.isEmpty(object.DiagramGUID))
+		{
+			var diagramPackage =
+				addin.repositoryService.getPackageById(
+					object.PackageID
+				);
+
+			if (diagramPackage && diagramPackage.Element)
+			{
+				targetElement = diagramPackage.Element;
+				objectGuid = object.DiagramGUID;
+				tagName =
+					addin.fbaConstants.TAG_CHECK_RESULT
+					+ "_DIAGRAM_"
+					+ addin.utils.normalizeGuid(objectGuid)
+						.replace(/[^A-Za-z0-9]/g, "");
+			}
 		}
 
 		if (!targetElement || addin.utils.isEmpty(objectGuid))
@@ -12292,7 +12321,7 @@ return {
 		var success =
 			addin.repositoryService.setTaggedValueMemo(
 				targetElement,
-				addin.fbaConstants.TAG_CHECK_RESULT,
+				tagName,
 				json
 			);
 
@@ -12302,7 +12331,7 @@ return {
 		var persistedJson =
 			addin.repositoryService.getTaggedValueMemo(
 				targetElement,
-				addin.fbaConstants.TAG_CHECK_RESULT
+				tagName
 			);
 
 		var identical =
@@ -12351,6 +12380,8 @@ return {
 			return null;
 
 		var targetElement = null;
+		var tagName =
+			addin.fbaConstants.TAG_CHECK_RESULT;
 
 		if (!addin.utils.isEmpty(object.ElementGUID))
 		{
@@ -12362,6 +12393,23 @@ return {
 		)
 		{
 			targetElement = object.Element;
+		}
+		else if (!addin.utils.isEmpty(object.DiagramGUID))
+		{
+			var diagramPackage =
+				addin.repositoryService.getPackageById(
+					object.PackageID
+				);
+
+			if (diagramPackage && diagramPackage.Element)
+			{
+				targetElement = diagramPackage.Element;
+				tagName =
+					tagName
+					+ "_DIAGRAM_"
+					+ addin.utils.normalizeGuid(object.DiagramGUID)
+						.replace(/[^A-Za-z0-9]/g, "");
+			}
 		}
 
 		if (!targetElement)
@@ -17271,6 +17319,53 @@ return {
 					"Persistance CHECK artefact échouée"
 					+ " | Artifact=" + checkedArtifact.Name
 					+ " | GUID=" + checkedArtifact.ElementGUID
+				);
+			}
+		}
+
+
+		// =====================================================
+		// PERSISTANCE DISTRIBUEE - DIAGRAMMES
+		// =====================================================
+
+		for (var checkedDiagramGuid in result.objects)
+		{
+			if (!result.objects.hasOwnProperty(checkedDiagramGuid))
+				continue;
+
+			var checkedDiagramObject =
+				result.objects[checkedDiagramGuid];
+
+			if (
+				!checkedDiagramObject ||
+				checkedDiagramObject.objectType != "DIAGRAM"
+			)
+			{
+				continue;
+			}
+
+			var checkedDiagram =
+				addin.repositoryService.getDiagramByGuid(
+					checkedDiagramObject.guid
+				);
+
+			if (!checkedDiagram)
+			{
+				result.success = false;
+				addin.logger.error(
+					"Persistance CHECK diagramme impossible"
+					+ " | GUID=" + checkedDiagramObject.guid
+				);
+				continue;
+			}
+
+			if (!this.persistCheckResult(checkedDiagram, result))
+			{
+				result.success = false;
+				addin.logger.error(
+					"Persistance CHECK diagramme échouée"
+					+ " | Diagram=" + checkedDiagram.Name
+					+ " | GUID=" + checkedDiagram.DiagramGUID
 				);
 			}
 		}
