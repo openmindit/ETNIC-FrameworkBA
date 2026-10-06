@@ -17129,6 +17129,15 @@ return {
 			},
 			metrics:
 			{
+				packages:
+					this._createCheckMetrics().packages,
+
+				artifacts:
+					this._createCheckMetrics().artifacts,
+
+				diagrams:
+					this._createCheckMetrics().diagrams,
+
 				objects:
 				{
 					packages: 0,
@@ -17376,6 +17385,55 @@ return {
 				}
 			}
 			
+			// =====================================================
+			// 1.4.1 AGREGATION DES METRIQUES LOCALES
+			// =====================================================
+
+			if (packageResult.metrics)
+			{
+				var metricFamilies = [
+					"packages",
+					"artifacts",
+					"diagrams"
+				];
+
+				for (
+					var metricFamilyIndex = 0;
+					metricFamilyIndex < metricFamilies.length;
+					metricFamilyIndex++
+				)
+				{
+					var metricFamily =
+						metricFamilies[metricFamilyIndex];
+
+					var sourceMetrics =
+						packageResult.metrics[metricFamily];
+
+					var targetMetrics =
+						result.metrics[metricFamily];
+
+					if (!sourceMetrics || !targetMetrics)
+						continue;
+
+					for (var metricName in sourceMetrics)
+					{
+						if (!sourceMetrics.hasOwnProperty(metricName))
+							continue;
+
+						if (
+							typeof sourceMetrics[metricName] !== "number" ||
+							typeof targetMetrics[metricName] !== "number"
+						)
+						{
+							continue;
+						}
+
+						targetMetrics[metricName] +=
+							sourceMetrics[metricName];
+					}
+				}
+			}
+
 			// =====================================================
 			// 1.5 AGREGATION DU SUMMARY
 			// =====================================================
@@ -17648,6 +17706,48 @@ return {
 
 		result.metrics.objects.total =
 			objectCount;
+
+		addin.logger.info(
+			"TEST CHECK ROOT METRICS"
+			+ " | Packages.Found="
+			+ result.metrics.packages.found
+			+ " | Diagrams.Expected="
+			+ result.metrics.diagrams.expected
+			+ " | Diagrams.Found="
+			+ result.metrics.diagrams.found
+			+ " | Diagrams.Compliant="
+			+ result.metrics.diagrams.compliant
+			+ " | Diagrams.NonCompliant="
+			+ result.metrics.diagrams.nonCompliant
+			+ " | Diagrams.Missing="
+			+ result.metrics.diagrams.missing
+			+ " | Diagrams.Foreign="
+			+ result.metrics.diagrams.foreign
+			+ " | Diagrams.DuplicateGroups="
+			+ result.metrics.diagrams.duplicateGroups
+			+ " | Diagrams.DuplicateExcess="
+			+ result.metrics.diagrams.duplicateExcess
+			+ " | Artifacts.Expected="
+			+ result.metrics.artifacts.expected
+			+ " | Artifacts.Found="
+			+ result.metrics.artifacts.found
+			+ " | Artifacts.Compliant="
+			+ result.metrics.artifacts.compliant
+			+ " | Artifacts.NonCompliant="
+			+ result.metrics.artifacts.nonCompliant
+			+ " | Artifacts.Missing="
+			+ result.metrics.artifacts.missing
+			+ " | Artifacts.Foreign="
+			+ result.metrics.artifacts.foreign
+			+ " | Artifacts.DuplicateGroups="
+			+ result.metrics.artifacts.duplicateGroups
+			+ " | Artifacts.DuplicateExcess="
+			+ result.metrics.artifacts.duplicateExcess
+			+ " | GlobalDuplicateGroups="
+			+ result.metrics.duplicates.groups
+			+ " | GlobalDuplicateExcess="
+			+ result.metrics.duplicates.excess
+		);
 
 		// =========================================================
 		// 4. PERSISTENCE DU SNAPSHOT CHECK
