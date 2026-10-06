@@ -12125,16 +12125,38 @@ return {
 		if (!object)
 			return "";
 
-		var modified =
-			object.Modified;
+		var modified = null;
 
-		if (
-			modified == null &&
-			object.Element
-		)
+		/*
+		 * EA.Diagram n'expose pas ModifiedDate de manière fiable
+		 * via l'Automation Interface utilisée par le Model-Based Add-In.
+		 * La valeur de référence est donc lue directement dans t_diagram.
+		 */
+		if (!addin.utils.isEmpty(object.DiagramGUID))
 		{
 			modified =
-				object.Element.Modified;
+				addin.database.getFieldValueString(
+					"ModifiedDate",
+					"t_diagram",
+					"ea_guid = "
+						+ addin.database.safeSQLString(
+							object.DiagramGUID
+						)
+				);
+		}
+		else
+		{
+			modified =
+				object.Modified;
+
+			if (
+				modified == null &&
+				object.Element
+			)
+			{
+				modified =
+					object.Element.Modified;
+			}
 		}
 
 		var value =
