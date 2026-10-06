@@ -15504,6 +15504,11 @@ return {
 							effectiveConfig
 						);
 
+					var diagramImportance =
+						effectiveConfig
+							? effectiveConfig.importanceLevel
+							: "";
+
 
 					// ---------------------------------------------
 					// Diagramme Framework BA existant
@@ -15522,12 +15527,6 @@ return {
 						generatedDiagrams.length > 0
 					)
 					{
-						result.metrics.diagrams.found +=
-							generatedDiagrams.length;
-
-						var generatedDiagram =
-							generatedDiagrams[0];
-						
 						for (
 							var generatedIndex = 0;
 							generatedIndex < generatedDiagrams.length;
@@ -15550,6 +15549,43 @@ return {
 							] = true;
 						}
 						
+						var compatibleNonGeneratedCount = 0;
+
+						analysisPackage.Diagrams.Refresh();
+
+						for (
+							var presenceDiagramIndex = 0;
+							presenceDiagramIndex < analysisPackage.Diagrams.Count;
+							presenceDiagramIndex++
+						)
+						{
+							var presenceCandidateDiagram =
+								analysisPackage.Diagrams.GetAt(
+									presenceDiagramIndex
+								);
+
+							if (!presenceCandidateDiagram)
+								continue;
+
+							var presenceCandidateGuid =
+								addin.utils.normalizeGuid(
+									presenceCandidateDiagram.DiagramGUID
+								);
+
+							if (
+								!recognizedDiagramGuids[
+									presenceCandidateGuid
+								] &&
+								addin.utils.equalsIgnoreCase(
+									presenceCandidateDiagram.MetaType,
+									diagramDefinition.metaType
+								)
+							)
+							{
+								compatibleNonGeneratedCount++;
+							}
+						}
+
 						// =====================================================
 						// 48B.1 - RULE RESULT
 						// DIAGRAM PRESENCE - FRAMEWORK BA
@@ -15571,15 +15607,26 @@ return {
 
 									diagramDefinition.guid,
 
-									"Obligatoire",
+									diagramImportance,
 
 									{
-										required: true
+										required:
+											addin.utils.equalsIgnoreCase(
+												diagramImportance,
+												"Obligatoire"
+											),
+
+										recommended:
+											addin.utils.equalsIgnoreCase(
+												diagramImportance,
+												"Recommandé"
+											)
 									},
 
 									{
 										count:
-											generatedDiagrams.length,
+											generatedDiagrams.length
+											+ compatibleNonGeneratedCount,
 
 										found:
 											true
@@ -15599,6 +15646,29 @@ return {
 							}
 						}
 
+
+						for (
+							var generatedCheckIndex = 0;
+							generatedCheckIndex < generatedDiagrams.length;
+							generatedCheckIndex++
+						)
+						{
+							var generatedDiagram =
+								generatedDiagrams[
+									generatedCheckIndex
+								];
+
+							if (!generatedDiagram)
+								continue;
+
+							result.metrics.diagrams.found++;
+
+							diagramCheckResult =
+								this._createDiagramCheckResult(
+									diagramDefinition,
+									generatedDiagram,
+									effectiveConfig
+								);
 
 						var generatedDiagramObjectResult =
 							this._registerCheckObject(
@@ -15940,21 +16010,20 @@ return {
 
 						}
 
-						addin.logger.debug(
-							"Diagramme obligatoire présent"
-							+ " | Package="
-							+ analysisPackage.Name
-							+ " | DefinitionGUID="
-							+ diagramDefinition.guid
-							+ " | Nombre="
-							+ generatedDiagrams.length
-							+ " | Artifacts="
-							+ diagramCheckResult
-								.artifacts.length
-						);
+							addin.logger.debug(
+								"Diagramme Framework BA présent"
+								+ " | Package="
+								+ analysisPackage.Name
+								+ " | Diagram="
+								+ generatedDiagram.Name
+								+ " | DefinitionGUID="
+								+ diagramDefinition.guid
+								+ " | Artifacts="
+								+ diagramCheckResult
+									.artifacts.length
+							);
+						}
 
-
-						continue;
 					}
 
 
@@ -15982,7 +16051,15 @@ return {
 							continue;
 
 
+						var candidateDiagramGuid =
+							addin.utils.normalizeGuid(
+								candidateDiagram.DiagramGUID
+							);
+
 						if (
+							!recognizedDiagramGuids[
+								candidateDiagramGuid
+							] &&
 							addin.utils.equalsIgnoreCase(
 								candidateDiagram.MetaType,
 								diagramDefinition.metaType
@@ -16008,12 +16085,6 @@ return {
 					}
 
 
-					var diagramImportance =
-						effectiveConfig
-							? effectiveConfig.importanceLevel
-							: "";
-
-
 					if (existingDiagrams.length > 0)
 					{
 						// =====================================================
@@ -16022,7 +16093,10 @@ return {
 						// Une seule règle de présence par définition
 						// =====================================================
 
-						if (result.ruleResults)
+						if (
+							result.ruleResults &&
+							(!generatedDiagrams || generatedDiagrams.length === 0)
+						)
 						{
 							var existingDiagramPresenceRuleResult =
 								this._createCheckRuleResult(
