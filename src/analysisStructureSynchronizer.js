@@ -12352,6 +12352,50 @@ return {
 				objectRuleResults
 		};
 
+		/*
+		 * Le snapshot PACKAGE porte la composition observée pendant
+		 * ce CHECK. Elle permettra à la consolidation de détecter
+		 * ajout / suppression / déplacement sans relancer les règles.
+		 * Les métriques sont un cache dérivé, jamais la source de vérité.
+		 */
+		if (objectResult.objectType == "PACKAGE")
+		{
+			var artifactGuids = [];
+			var diagramGuids = [];
+			var checkedObjects = checkResult.objects || {};
+
+			for (var checkedGuid in checkedObjects)
+			{
+				if (!checkedObjects.hasOwnProperty(checkedGuid))
+					continue;
+
+				var checkedObject = checkedObjects[checkedGuid];
+
+				if (!checkedObject)
+					continue;
+
+				if (checkedObject.objectType == "ARTIFACT")
+				{
+					artifactGuids.push(checkedObject.guid);
+				}
+				else if (checkedObject.objectType == "DIAGRAM")
+				{
+					diagramGuids.push(checkedObject.guid);
+				}
+			}
+
+			artifactGuids.sort();
+			diagramGuids.sort();
+
+			snapshot.content = {
+				artifacts: artifactGuids,
+				diagrams: diagramGuids
+			};
+
+			snapshot.metrics =
+				checkResult.metrics || this._createCheckMetrics();
+		}
+
 		var json =
 			JSON.stringify(snapshot);
 
@@ -17427,6 +17471,22 @@ return {
 		{
 			result.metrics.packages
 				.compliant++;
+		}
+
+
+		// =====================================================
+		// PERSISTANCE DISTRIBUEE - PACKAGE
+		// =====================================================
+
+		if (!this.persistCheckResult(analysisPackage, result))
+		{
+			result.success = false;
+
+			addin.logger.error(
+				"Persistance CHECK package échouée"
+				+ " | Package=" + analysisPackage.Name
+				+ " | GUID=" + analysisPackage.PackageGUID
+			);
 		}
 
 
