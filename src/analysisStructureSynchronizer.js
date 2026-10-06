@@ -17410,7 +17410,12 @@ return {
 
 			if (
 				!storageDiagramObject ||
-				storageDiagramObject.objectType != "DIAGRAM"
+				storageDiagramObject.objectType != "DIAGRAM" ||
+				!recognizedDiagramGuids[
+					addin.utils.normalizeGuid(
+						storageDiagramObject.guid
+					)
+				]
 			)
 			{
 				continue;
