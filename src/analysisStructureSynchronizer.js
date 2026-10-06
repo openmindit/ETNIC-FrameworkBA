@@ -15522,12 +15522,6 @@ return {
 						generatedDiagrams.length > 0
 					)
 					{
-						result.metrics.diagrams.found +=
-							generatedDiagrams.length;
-
-						var generatedDiagram =
-							generatedDiagrams[0];
-						
 						for (
 							var generatedIndex = 0;
 							generatedIndex < generatedDiagrams.length;
@@ -15599,6 +15593,29 @@ return {
 							}
 						}
 
+
+						for (
+							var generatedCheckIndex = 0;
+							generatedCheckIndex < generatedDiagrams.length;
+							generatedCheckIndex++
+						)
+						{
+							var generatedDiagram =
+								generatedDiagrams[
+									generatedCheckIndex
+								];
+
+							if (!generatedDiagram)
+								continue;
+
+							result.metrics.diagrams.found++;
+
+							diagramCheckResult =
+								this._createDiagramCheckResult(
+									diagramDefinition,
+									generatedDiagram,
+									effectiveConfig
+								);
 
 						var generatedDiagramObjectResult =
 							this._registerCheckObject(
@@ -15940,18 +15957,19 @@ return {
 
 						}
 
-						addin.logger.debug(
-							"Diagramme obligatoire présent"
-							+ " | Package="
-							+ analysisPackage.Name
-							+ " | DefinitionGUID="
-							+ diagramDefinition.guid
-							+ " | Nombre="
-							+ generatedDiagrams.length
-							+ " | Artifacts="
-							+ diagramCheckResult
-								.artifacts.length
-						);
+							addin.logger.debug(
+								"Diagramme Framework BA présent"
+								+ " | Package="
+								+ analysisPackage.Name
+								+ " | Diagram="
+								+ generatedDiagram.Name
+								+ " | DefinitionGUID="
+								+ diagramDefinition.guid
+								+ " | Artifacts="
+								+ diagramCheckResult
+									.artifacts.length
+							);
+						}
 
 
 						continue;
