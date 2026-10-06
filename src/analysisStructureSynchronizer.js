@@ -16061,7 +16061,7 @@ return {
 								analysisPackage.PackageGUID
 							);
 
-						/* DGC d'instance résolu après les contrôles via DiagramGUID. */
+						generatedDiagramObjectResult.recognizedByMetamodel = true;
 
 
 						diagramCheckResult.diagram.guid =
@@ -16564,7 +16564,7 @@ return {
 									analysisPackage.PackageGUID
 								);
 
-							/* DGC d'instance résolu après les contrôles via DiagramGUID. */
+							existingDiagramObjectResult.recognizedByMetamodel = true;
 
 
 							addin.logger.info(
@@ -17411,11 +17411,7 @@ return {
 			if (
 				!storageDiagramObject ||
 				storageDiagramObject.objectType != "DIAGRAM" ||
-				!recognizedDiagramGuids[
-					addin.utils.normalizeGuid(
-						storageDiagramObject.guid
-					)
-				]
+				storageDiagramObject.recognizedByMetamodel !== true
 			)
 			{
 				continue;
