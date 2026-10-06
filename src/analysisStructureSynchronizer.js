@@ -16748,6 +16748,105 @@ return {
 
 
 		// =====================================================
+		// METRIQUES LOCALES - DOUBLONS D'ARTEFACTS RECONNUS
+		// =====================================================
+
+		if (
+			result.metrics &&
+			result.metrics.artifacts &&
+			typeof recognizedArtifactGuids !== "undefined"
+		)
+		{
+			var localArtifactUniquenessCandidates = [];
+
+			analysisPackage.Elements.Refresh();
+
+			for (
+				var localDuplicateArtifactIndex = 0;
+				localDuplicateArtifactIndex < analysisPackage.Elements.Count;
+				localDuplicateArtifactIndex++
+			)
+			{
+				var localDuplicateArtifact =
+					analysisPackage.Elements.GetAt(
+						localDuplicateArtifactIndex
+					);
+
+				if (!localDuplicateArtifact)
+					continue;
+
+				var localDuplicateArtifactGuid =
+					addin.utils.normalizeGuid(
+						localDuplicateArtifact.ElementGUID
+					);
+
+				if (
+					!recognizedArtifactGuids[
+						localDuplicateArtifactGuid
+					]
+				)
+				{
+					continue;
+				}
+
+				var localArtifactDuplicateCandidate =
+					this._createUniquenessCandidate(
+						localDuplicateArtifact.ElementGUID,
+						"ARTIFACT",
+						localDuplicateArtifact.Name,
+						analysisPackage.PackageGUID,
+						analysisPackage.PackageGUID,
+						""
+					);
+
+				if (localArtifactDuplicateCandidate)
+				{
+					localArtifactUniquenessCandidates.push(
+						localArtifactDuplicateCandidate
+					);
+				}
+			}
+
+			var localArtifactDuplicates =
+				this._findDuplicateArtifacts(
+					localArtifactUniquenessCandidates
+				);
+
+			if (
+				localArtifactDuplicates &&
+				localArtifactDuplicates.local
+			)
+			{
+				result.metrics.artifacts.duplicateGroups =
+					localArtifactDuplicates.local.length;
+
+				var localArtifactDuplicateExcess = 0;
+
+				for (
+					var localArtifactDuplicateGroupIndex = 0;
+					localArtifactDuplicateGroupIndex < localArtifactDuplicates.local.length;
+					localArtifactDuplicateGroupIndex++
+				)
+				{
+					var localArtifactDuplicateGroup =
+						localArtifactDuplicates.local[
+							localArtifactDuplicateGroupIndex
+						];
+
+					if (!localArtifactDuplicateGroup)
+						continue;
+
+					localArtifactDuplicateExcess +=
+						localArtifactDuplicateGroup.excess || 0;
+				}
+
+				result.metrics.artifacts.duplicateExcess =
+					localArtifactDuplicateExcess;
+			}
+		}
+
+
+		// =====================================================
 		// METRIQUES LOCALES - DOUBLONS DE DIAGRAMMES RECONNUS
 		// =====================================================
 
@@ -16969,6 +17068,12 @@ return {
 
 			+ " | Artifacts.NamingInvalid="
 			+ result.metrics.artifacts.namingInvalid
+
+			+ " | Artifacts.DuplicateGroups="
+			+ result.metrics.artifacts.duplicateGroups
+
+			+ " | Artifacts.DuplicateExcess="
+			+ result.metrics.artifacts.duplicateExcess
 			
 		);
 
