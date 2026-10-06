@@ -16748,6 +16748,105 @@ return {
 
 
 		// =====================================================
+		// METRIQUES LOCALES - DOUBLONS DE DIAGRAMMES RECONNUS
+		// =====================================================
+
+		if (
+			result.metrics &&
+			result.metrics.diagrams &&
+			typeof recognizedDiagramGuids !== "undefined"
+		)
+		{
+			var localDiagramUniquenessCandidates = [];
+
+			analysisPackage.Diagrams.Refresh();
+
+			for (
+				var localDuplicateDiagramIndex = 0;
+				localDuplicateDiagramIndex < analysisPackage.Diagrams.Count;
+				localDuplicateDiagramIndex++
+			)
+			{
+				var localDuplicateDiagram =
+					analysisPackage.Diagrams.GetAt(
+						localDuplicateDiagramIndex
+					);
+
+				if (!localDuplicateDiagram)
+					continue;
+
+				var localDuplicateDiagramGuid =
+					addin.utils.normalizeGuid(
+						localDuplicateDiagram.DiagramGUID
+					);
+
+				if (
+					!recognizedDiagramGuids[
+						localDuplicateDiagramGuid
+					]
+				)
+				{
+					continue;
+				}
+
+				var localDuplicateCandidate =
+					this._createUniquenessCandidate(
+						localDuplicateDiagram.DiagramGUID,
+						"DIAGRAM",
+						localDuplicateDiagram.Name,
+						analysisPackage.PackageGUID,
+						analysisPackage.PackageGUID,
+						""
+					);
+
+				if (localDuplicateCandidate)
+				{
+					localDiagramUniquenessCandidates.push(
+						localDuplicateCandidate
+					);
+				}
+			}
+
+			var localDiagramDuplicates =
+				this._findDuplicateDiagrams(
+					localDiagramUniquenessCandidates
+				);
+
+			if (
+				localDiagramDuplicates &&
+				localDiagramDuplicates.local
+			)
+			{
+				result.metrics.diagrams.duplicateGroups =
+					localDiagramDuplicates.local.length;
+
+				var localDiagramDuplicateExcess = 0;
+
+				for (
+					var localDuplicateGroupIndex = 0;
+					localDuplicateGroupIndex < localDiagramDuplicates.local.length;
+					localDuplicateGroupIndex++
+				)
+				{
+					var localDiagramDuplicateGroup =
+						localDiagramDuplicates.local[
+							localDuplicateGroupIndex
+						];
+
+					if (!localDiagramDuplicateGroup)
+						continue;
+
+					localDiagramDuplicateExcess +=
+						localDiagramDuplicateGroup.excess || 0;
+				}
+
+				result.metrics.diagrams.duplicateExcess =
+					localDiagramDuplicateExcess;
+			}
+		}
+
+
+		// =====================================================
 		// STATUT DE CONFORMITE DU PACKAGE
 		// =====================================================
 
@@ -16834,6 +16933,12 @@ return {
 
 			+ " | Diagrams.NamingInvalid="
 			+ result.metrics.diagrams.namingInvalid
+
+			+ " | Diagrams.DuplicateGroups="
+			+ result.metrics.diagrams.duplicateGroups
+
+			+ " | Diagrams.DuplicateExcess="
+			+ result.metrics.diagrams.duplicateExcess
 			
 			+ " | Artifacts.Expected="
 			+ result.metrics.artifacts.expected
