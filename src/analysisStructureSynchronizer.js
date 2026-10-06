@@ -12120,6 +12120,246 @@ return {
 		return issues;
 	},
 	
+	hash: function(object)
+	{
+		if (!object)
+			return "";
+
+		var modified =
+			object.Modified;
+
+		if (
+			modified == null &&
+			object.Element
+		)
+		{
+			modified =
+				object.Element.Modified;
+		}
+
+		var value =
+			modified == null
+				? ""
+				: String(modified);
+
+		/*
+		 * V1 : l'empreinte représente uniquement Modified.
+		 *
+		 * Le CHECK et la consolidation ne connaissent pas cette
+		 * stratégie. Elle pourra donc évoluer ici sans modifier
+		 * le contrat de persistance.
+		 */
+		var hash = 2166136261;
+
+		for (
+			var i = 0;
+			i < value.length;
+			i++
+		)
+		{
+			hash ^= value.charCodeAt(i);
+
+			hash +=
+				(hash << 1) +
+				(hash << 4) +
+				(hash << 7) +
+				(hash << 8) +
+				(hash << 24);
+		}
+
+		return (
+			"00000000" +
+			(hash >>> 0).toString(16)
+		).slice(-8).toUpperCase();
+	},
+
+
+	persistCheckResult: function(
+		object,
+		checkResult
+	)
+	{
+		if (!object || !checkResult)
+			return false;
+
+		var targetElement = null;
+		var objectGuid = "";
+
+		if (!addin.utils.isEmpty(object.ElementGUID))
+		{
+			targetElement = object;
+			objectGuid = object.ElementGUID;
+		}
+		else if (
+			!addin.utils.isEmpty(object.PackageGUID) &&
+			object.Element
+		)
+		{
+			targetElement = object.Element;
+			objectGuid = object.PackageGUID;
+		}
+
+		if (!targetElement || addin.utils.isEmpty(objectGuid))
+		{
+			addin.logger.warning(
+				"Persistance CHECK non supportée pour l'objet reçu"
+			);
+
+			return false;
+		}
+
+		var normalizedGuid =
+			addin.utils.normalizeGuid(
+				objectGuid
+			);
+
+		var objectResult =
+			checkResult.objects
+				? checkResult.objects[normalizedGuid]
+				: null;
+
+		if (!objectResult)
+		{
+			addin.logger.warning(
+				"Résultat CHECK objet introuvable"
+				+ " | GUID=" + objectGuid
+			);
+
+			return false;
+		}
+
+		var objectRuleResults = [];
+		var ruleResults =
+			checkResult.ruleResults || [];
+
+		for (
+			var i = 0;
+			i < ruleResults.length;
+			i++
+		)
+		{
+			var ruleResult =
+				ruleResults[i];
+
+			if (!ruleResult)
+				continue;
+
+			if (
+				!addin.utils.isEmpty(ruleResult.objectGuid) &&
+				addin.utils.equalsIgnoreCase(
+					ruleResult.objectGuid,
+					objectGuid
+				)
+			)
+			{
+				objectRuleResults.push(
+					ruleResult
+				);
+			}
+		}
+
+		var snapshot = {
+			schemaVersion: 1,
+			scope:
+				objectResult.objectType || "",
+			checkedAt:
+				checkResult.checkedAt || "",
+			sourceHash:
+				this.hash(object),
+			status:
+				this._getCheckStatus(
+					objectResult.issues || []
+				),
+			object: {
+				guid:
+					objectResult.guid || normalizedGuid,
+				type:
+					objectResult.objectType || "",
+				name:
+					objectResult.name || "",
+				parentGuid:
+					objectResult.parentGuid || ""
+			},
+			issues:
+				objectResult.issues || [],
+			ruleResults:
+				objectRuleResults
+		};
+
+		var json =
+			JSON.stringify(snapshot);
+
+		var success =
+			addin.repositoryService.setTaggedValueMemo(
+				targetElement,
+				addin.fbaConstants.TAG_CHECK_RESULT,
+				json
+			);
+
+		if (success)
+		{
+			addin.logger.info(
+				"CHECK objet persisté"
+				+ " | Type=" + snapshot.scope
+				+ " | Name=" + snapshot.object.name
+				+ " | GUID=" + snapshot.object.guid
+				+ " | Status=" + snapshot.status
+				+ " | SourceHash=" + snapshot.sourceHash
+				+ " | Size=" + json.length
+			);
+		}
+
+		return success;
+	},
+
+
+	loadCheckResult: function(object)
+	{
+		if (!object)
+			return null;
+
+		var targetElement = null;
+
+		if (!addin.utils.isEmpty(object.ElementGUID))
+		{
+			targetElement = object;
+		}
+		else if (
+			!addin.utils.isEmpty(object.PackageGUID) &&
+			object.Element
+		)
+		{
+			targetElement = object.Element;
+		}
+
+		if (!targetElement)
+			return null;
+
+		try
+		{
+			var json =
+				addin.repositoryService.getTaggedValueMemo(
+					targetElement,
+					addin.fbaConstants.TAG_CHECK_RESULT
+				);
+
+			if (addin.utils.isEmpty(json))
+				return null;
+
+			return JSON.parse(json);
+		}
+		catch (e)
+		{
+			addin.logger.error(
+				"Erreur lecture résultat CHECK objet"
+				+ " | Error=" + e.message
+			);
+
+			return null;
+		}
+	},
+
+
 	_persistCheckSnapshot: function(
 		rootPackage,
 		checkResult
@@ -16941,6 +17181,65 @@ return {
 
 				result.metrics.diagrams.duplicateExcess =
 					localDiagramDuplicateExcess;
+			}
+		}
+
+
+		// =====================================================
+		// PERSISTANCE DISTRIBUEE - ARTEFACTS
+		//
+		// Première étape de la migration : le résultat global
+		// reste inchangé, mais chaque artefact contrôlé reçoit
+		// également son propre snapshot CHECK.
+		// =====================================================
+
+		for (var checkedObjectGuid in result.objects)
+		{
+			if (!result.objects.hasOwnProperty(checkedObjectGuid))
+				continue;
+
+			var checkedObject =
+				result.objects[checkedObjectGuid];
+
+			if (
+				!checkedObject ||
+				checkedObject.objectType != "ARTIFACT"
+			)
+			{
+				continue;
+			}
+
+			var checkedArtifact =
+				addin.repositoryService.getElementByGuid(
+					checkedObject.guid
+				);
+
+			if (!checkedArtifact)
+			{
+				result.success = false;
+
+				addin.logger.error(
+					"Persistance CHECK artefact impossible"
+					+ " | GUID=" + checkedObject.guid
+				);
+
+				continue;
+			}
+
+			if (
+				!this.persistCheckResult(
+					checkedArtifact,
+					result
+				)
+			)
+			{
+				result.success = false;
+
+				addin.logger.error(
+					"Persistance CHECK artefact échouée"
+					+ " | Artifact=" + checkedArtifact.Name
+					+ " | GUID=" + checkedArtifact.ElementGUID
+				);
 			}
 		}
 
