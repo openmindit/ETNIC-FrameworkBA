@@ -10417,7 +10417,7 @@ return {
 		};
 	},
 	
-	_getDiagramCheckArtifactDefinitions: function(localDefinitions, diagramDefinitions)
+	_getDiagramCheckArtifactDefinitions: function(localDefinitions, diagramDefinitions, checkResult)
 	{
 		var definitions = localDefinitions.slice(0);
 		var needsExternalDefinitions = false;
@@ -10440,14 +10440,35 @@ return {
 		if (!needsExternalDefinitions)
 			return definitions;
 
-		var analysisDefinitions = this._getOperationDefinitions();
-		var artifactIndex = this._getOperationArtifactDefinitionsIndex();
-		var tagIndex = this._getOperationAnalysisElementTagsIndex();
+		// Cache limité à ce CHECK : aucun état conservé entre deux contrôles.
+		var candidates = checkResult
+			? checkResult.diagramArtifactDefinitionsCache
+			: null;
 
-		for (var a = 0; a < analysisDefinitions.length; a++)
+		if (!candidates)
 		{
-			var candidates = this._loadArtifactDefinitions(
-				analysisDefinitions[a], artifactIndex, tagIndex);
+			candidates = [];
+			var analysisDefinitions = this._getOperationDefinitions();
+			var artifactIndex = this._getOperationArtifactDefinitionsIndex();
+			var tagIndex = this._getOperationAnalysisElementTagsIndex();
+
+			for (var a = 0; a < analysisDefinitions.length; a++)
+			{
+				var loadedDefinitions = this._loadArtifactDefinitions(
+					analysisDefinitions[a], artifactIndex, tagIndex);
+				for (var loadedIndex = 0; loadedIndex < loadedDefinitions.length; loadedIndex++)
+					candidates.push(loadedDefinitions[loadedIndex]);
+			}
+
+			if (checkResult)
+				Object.defineProperty(checkResult, "diagramArtifactDefinitionsCache", {
+					value: candidates,
+					enumerable: false,
+					configurable: true
+				});
+		}
+
+		{
 			for (var c = 0; c < candidates.length; c++)
 			{
 				var exists = false;
@@ -10851,7 +10872,7 @@ return {
 
 		var localArtifactDefinitions = artifactDefinitions || [];
 		artifactDefinitions = this._getDiagramCheckArtifactDefinitions(
-			localArtifactDefinitions, diagramArtifactDefinitions);
+			localArtifactDefinitions, diagramArtifactDefinitions, checkResult);
 
 		addin.logger.debug(
 			"CHECK artefacts diagramme"
