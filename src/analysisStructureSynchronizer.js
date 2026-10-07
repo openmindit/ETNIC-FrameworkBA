@@ -4423,10 +4423,11 @@ return {
 
 				if (entry)
 				{
-					if (entry.Name !== diagram.Name)
+					var expectedRegistryName = this._getDiagramRegistryName(diagram);
+					if (entry.Name !== expectedRegistryName)
 					{
 						var oldRegistryName = entry.Name;
-						entry.Name = diagram.Name;
+						entry.Name = expectedRegistryName;
 						if (!entry.Update())
 						{
 							entry.Name = oldRegistryName;
@@ -4473,6 +4474,12 @@ return {
 		);
 
 		return true;
+	},
+
+	_getDiagramRegistryName: function(diagram)
+	{
+		var name = addin.utils.trim(diagram ? diagram.Name : "");
+		return name.charAt(0) === "_" ? name : "_" + name;
 	},
 
 	_ensureDiagramRegistryEntry: function(
@@ -4609,7 +4616,7 @@ return {
 
 		registryEntry =
 			registryPackage.Elements.AddNew(
-				generatedDiagram.Name,
+				this._getDiagramRegistryName(generatedDiagram),
 				addin.fbaConstants
 					.DIAGRAM_REGISTRY_ELEMENT_TYPE
 			);
