@@ -29,7 +29,14 @@ return {
 
     notifyContextItemModified: function(guid, objectType)
     {
-        if (addin.checkInvalidationSuppressed || !guid) return false;
+        if (addin.checkInvalidationSuppressed) return false;
+        var ignored = function(reason)
+        {
+            addin.logger.info("Invalidation CHECK ignorée | GUID=" + guid
+                + " | ObjectType=" + objectType + " | Reason=" + reason);
+            return false;
+        };
+        if (!guid) return ignored("GUID_EMPTY");
         var object = null;
         var targetPackage = null;
         var targetElement = null;
@@ -47,7 +54,7 @@ return {
             else if (objectType == addin.eaConstants.otElement)
             {
                 object = addin.repositoryService.getElementByGuid(guid);
-                if (!object) return false;
+                if (!object) return ignored("OBJECT_NOT_FOUND");
                 // EA peut notifier le Package par son Element.
                 if (object.Type === "Package")
                 {
@@ -70,15 +77,17 @@ return {
                     ? addin.repositoryService.getPackageById(object.PackageID) : null;
                 kind = "DIAGRAM";
             }
-            else return false;
+            else return ignored("OBJECT_TYPE_UNSUPPORTED");
 
-            if (!object || !targetPackage ||
-                addin.utils.isTechnicalName(object.Name) ||
-                addin.utils.isTechnicalName(targetPackage.Name))
-                return false;
+            if (!object) return ignored("OBJECT_NOT_FOUND");
+            if (!targetPackage) return ignored("PACKAGE_NOT_FOUND");
+            if (addin.utils.isTechnicalName(object.Name))
+                return ignored("TECHNICAL_OBJECT");
+            if (addin.utils.isTechnicalName(targetPackage.Name))
+                return ignored("TECHNICAL_PACKAGE");
 
             var root = addin.analysisContextResolver._findAnalysisRoot(targetPackage);
-            if (!root || !root.Element) return false;
+            if (!root || !root.Element) return ignored("ANALYSIS_ROOT_NOT_FOUND");
 
             if (kind === "DIAGRAM")
             {
