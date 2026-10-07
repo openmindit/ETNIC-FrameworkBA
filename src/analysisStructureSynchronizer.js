@@ -10059,6 +10059,22 @@ return {
 		return true;
 	},
 		
+	_checkRuleBelongsToObject: function(ruleResult, objectGuid)
+	{
+		if (!ruleResult || addin.utils.isEmpty(objectGuid))
+			return false;
+
+		// Une règle exécutée sur un diagramme reste dans son snapshot,
+		// même lorsque l'objet examiné est un artefact représenté.
+		var ownerGuid =
+			addin.utils.equalsIgnoreCase(ruleResult.scopeType, "DIAGRAM")
+				? ruleResult.scopeGuid
+				: ruleResult.objectGuid;
+
+		return !addin.utils.isEmpty(ownerGuid) &&
+			addin.utils.equalsIgnoreCase(ownerGuid, objectGuid);
+	},
+
 	_createCheckRuleResult: function(
 		rule,
 		scope,
@@ -12557,9 +12573,8 @@ return {
 				continue;
 
 			if (
-				!addin.utils.isEmpty(ruleResult.objectGuid) &&
-				addin.utils.equalsIgnoreCase(
-					ruleResult.objectGuid,
+				this._checkRuleBelongsToObject(
+					ruleResult,
 					objectGuid
 				)
 			)
