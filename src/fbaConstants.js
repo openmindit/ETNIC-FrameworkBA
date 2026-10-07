@@ -44,6 +44,9 @@ let constants = {
     TECHNICAL_NAME_PREFIX:
         "_",
 		
+	TAG_CHECK_REQUIRED:
+        "ETNIC_Check_Required",
+
 	TAG_CHECK_RESULT:
 		"ETNIC_Check_Result",
 
