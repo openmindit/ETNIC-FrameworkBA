@@ -17113,6 +17113,14 @@ return {
 					}
 
 
+					// Un diagramme enregistré couvre déjà cette définition.
+					// Les diagrammes analyste compatibles ont aussi été contrôlés.
+					if (generatedDiagrams && generatedDiagrams.length > 0)
+					{
+						continue;
+					}
+
+
 					// ---------------------------------------------
 					// Diagramme obligatoire absent
 					// ---------------------------------------------
