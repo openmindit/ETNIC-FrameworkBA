@@ -10050,33 +10050,36 @@ return {
 			ownerGuid = issue.diagramGuid;
 		}
 
-		if (addin.utils.isEmpty(ownerGuid))
-			return true;
+		var ownerGuids = [];
+		if (!addin.utils.isEmpty(ownerGuid))
+			ownerGuids.push(ownerGuid);
 
-		var objectResult =
-			this._getCheckObject(
-				result,
-				ownerGuid
-			);
-
-		if (!objectResult)
-			return true;
-
-		objectResult.issues.push(issue);
-
+		// Les anomalies de contexte concernent à la fois l'artefact
+		// et le diagramme où il est présent.
 		if (
-			issue.severity ===
-			addin.fbaConstants.CHECK_SEVERITY_ERROR
+			!addin.utils.isEmpty(issue.diagramGuid) &&
+			(
+				addin.utils.isEmpty(ownerGuid) ||
+				addin.utils.normalizeGuid(ownerGuid) !==
+					addin.utils.normalizeGuid(issue.diagramGuid)
+			)
 		)
 		{
-			objectResult.summary.errors++;
+			ownerGuids.push(issue.diagramGuid);
 		}
-		else if (
-			issue.severity ===
-			addin.fbaConstants.CHECK_SEVERITY_WARNING
-		)
+
+		for (var ownerIndex = 0; ownerIndex < ownerGuids.length; ownerIndex++)
 		{
-			objectResult.summary.warnings++;
+			var objectResult = this._getCheckObject(result, ownerGuids[ownerIndex]);
+			if (!objectResult)
+				continue;
+
+			objectResult.issues.push(issue);
+
+			if (issue.severity === addin.fbaConstants.CHECK_SEVERITY_ERROR)
+				objectResult.summary.errors++;
+			else if (issue.severity === addin.fbaConstants.CHECK_SEVERITY_WARNING)
+				objectResult.summary.warnings++;
 		}
 
 		return true;
