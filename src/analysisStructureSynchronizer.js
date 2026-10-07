@@ -10401,6 +10401,55 @@ return {
 		};
 	},
 	
+	_getDiagramCheckArtifactDefinitions: function(localDefinitions, diagramDefinitions)
+	{
+		var definitions = localDefinitions.slice(0);
+		var needsExternalDefinitions = false;
+
+		for (var i = 0; i < diagramDefinitions.length; i++)
+		{
+			var found = false;
+			for (var j = 0; j < definitions.length; j++)
+			{
+				if (addin.utils.equalsIgnoreCase(
+					definitions[j].prototypeGuid, diagramDefinitions[i].guid))
+				{
+					found = true;
+					break;
+				}
+			}
+			if (!found) needsExternalDefinitions = true;
+		}
+
+		if (!needsExternalDefinitions)
+			return definitions;
+
+		var analysisDefinitions = this._getOperationDefinitions();
+		var artifactIndex = this._getOperationArtifactDefinitionsIndex();
+		var tagIndex = this._getOperationAnalysisElementTagsIndex();
+
+		for (var a = 0; a < analysisDefinitions.length; a++)
+		{
+			var candidates = this._loadArtifactDefinitions(
+				analysisDefinitions[a], artifactIndex, tagIndex);
+			for (var c = 0; c < candidates.length; c++)
+			{
+				var exists = false;
+				for (var d = 0; d < definitions.length; d++)
+				{
+					if (addin.utils.equalsIgnoreCase(
+						definitions[d].connectorGuid, candidates[c].connectorGuid))
+					{
+						exists = true;
+						break;
+					}
+				}
+				if (!exists) definitions.push(candidates[c]);
+			}
+		}
+		return definitions;
+	},
+
 	_findCanonicalArtifactDefinitions: function(
 		diagramArtifactDefinition,
 		artifactDefinitions)
@@ -10415,6 +10464,19 @@ return {
 			return result;
 		}
 
+
+		// Le prototype du diagramme source fournit l'identité de référence.
+		for (var exactIndex = 0; exactIndex < artifactDefinitions.length; exactIndex++)
+		{
+			var exactDefinition = artifactDefinitions[exactIndex];
+			if (exactDefinition && addin.utils.equalsIgnoreCase(
+				exactDefinition.prototypeGuid, diagramArtifactDefinition.guid))
+			{
+				result.push(exactDefinition);
+			}
+		}
+		if (result.length > 0)
+			return result;
 
 		for (
 			var i = 0;
@@ -10771,6 +10833,10 @@ return {
 		}
 
 
+		var localArtifactDefinitions = artifactDefinitions || [];
+		artifactDefinitions = this._getDiagramCheckArtifactDefinitions(
+			localArtifactDefinitions, diagramArtifactDefinitions);
+
 		addin.logger.debug(
 			"CHECK artefacts diagramme"
 			+ " | Diagram=" + diagram.Name
@@ -11036,6 +11102,18 @@ return {
 						artifact
 					);
 				
+				var belongsToCurrentAnalysis = false;
+				for (var localIndex = 0; localIndex < localArtifactDefinitions.length; localIndex++)
+				{
+					if (addin.utils.equalsIgnoreCase(
+						localArtifactDefinitions[localIndex].prototypeGuid,
+						canonicalArtifactDefinition.prototypeGuid))
+					{
+						belongsToCurrentAnalysis = true;
+						break;
+					}
+				}
+
 				// ====================================================
 				// 48E.1 - RULE RESULT
 				// ARTIFACT LOCATION
@@ -11047,6 +11125,7 @@ return {
 				)
 				{
 					var artifactLocationPassed =
+						!belongsToCurrentAnalysis ||
 						artifact.PackageID == diagram.PackageID;
 
 
@@ -11092,7 +11171,7 @@ return {
 				// 5.1 VERIFICATION DU CONTEXTE DU PACKAGE
 				// ------------------------------------------------
 
-				if (artifact.PackageID != diagram.PackageID)
+				if (belongsToCurrentAnalysis && artifact.PackageID != diagram.PackageID)
 				{
 					var artifactParentPackage =
 						addin.repositoryService.getPackageById(
