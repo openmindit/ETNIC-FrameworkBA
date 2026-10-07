@@ -10038,49 +10038,23 @@ return {
 			issue
 		);
 
-		var ownerGuid = issue.objectGuid;
+		// Une règle de diagramme reste portée par ce diagramme.
+		// objectGuid peut identifier l'artefact concerné par l'action,
+		// sans désigner le propriétaire du résultat CHECK.
+		var ownerGuid = !addin.utils.isEmpty(issue.diagramGuid)
+			? issue.diagramGuid
+			: issue.objectGuid;
 
-		// Une présence manquante appartient au diagramme :
-		// aucun artefact physique ne peut porter cette issue.
-		if (
-			addin.utils.isEmpty(ownerGuid) &&
-			issue.objectType === "DIAGRAM_ARTIFACT"
-		)
-		{
-			ownerGuid = issue.diagramGuid;
-		}
+		var objectResult = this._getCheckObject(result, ownerGuid);
+		if (!objectResult)
+			return true;
 
-		var ownerGuids = [];
-		if (!addin.utils.isEmpty(ownerGuid))
-			ownerGuids.push(ownerGuid);
+		objectResult.issues.push(issue);
 
-		// Les anomalies de contexte concernent à la fois l'artefact
-		// et le diagramme où il est présent.
-		if (
-			!addin.utils.isEmpty(issue.diagramGuid) &&
-			(
-				addin.utils.isEmpty(ownerGuid) ||
-				addin.utils.normalizeGuid(ownerGuid) !==
-					addin.utils.normalizeGuid(issue.diagramGuid)
-			)
-		)
-		{
-			ownerGuids.push(issue.diagramGuid);
-		}
-
-		for (var ownerIndex = 0; ownerIndex < ownerGuids.length; ownerIndex++)
-		{
-			var objectResult = this._getCheckObject(result, ownerGuids[ownerIndex]);
-			if (!objectResult)
-				continue;
-
-			objectResult.issues.push(issue);
-
-			if (issue.severity === addin.fbaConstants.CHECK_SEVERITY_ERROR)
-				objectResult.summary.errors++;
-			else if (issue.severity === addin.fbaConstants.CHECK_SEVERITY_WARNING)
-				objectResult.summary.warnings++;
-		}
+		if (issue.severity === addin.fbaConstants.CHECK_SEVERITY_ERROR)
+			objectResult.summary.errors++;
+		else if (issue.severity === addin.fbaConstants.CHECK_SEVERITY_WARNING)
+			objectResult.summary.warnings++;
 
 		return true;
 	},
@@ -12569,6 +12543,8 @@ return {
 
 				if (checkedObject.objectType == "ARTIFACT")
 				{
+					if (!addin.utils.equalsIgnoreCase(checkedObject.parentGuid, objectGuid))
+						continue;
 					artifactGuids.push(checkedObject.guid);
 				}
 				else if (checkedObject.objectType == "DIAGRAM")
@@ -17562,6 +17538,18 @@ return {
 					+ " | GUID=" + checkedObject.guid
 				);
 
+				continue;
+			}
+
+			// Le CHECK de ce package ne remplace pas le résultat local
+			// d'un artefact appartenant à un autre package.
+			if (checkedArtifact.PackageID != analysisPackage.PackageID)
+			{
+				addin.logger.info(
+					"Snapshot artefact externe préservé"
+					+ " | Artifact=" + checkedArtifact.Name
+					+ " | GUID=" + checkedArtifact.ElementGUID
+				);
 				continue;
 			}
 
