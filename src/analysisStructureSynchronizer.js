@@ -10038,13 +10038,25 @@ return {
 			issue
 		);
 
-		if (addin.utils.isEmpty(issue.objectGuid))
+		var ownerGuid = issue.objectGuid;
+
+		// Une présence manquante appartient au diagramme :
+		// aucun artefact physique ne peut porter cette issue.
+		if (
+			addin.utils.isEmpty(ownerGuid) &&
+			issue.objectType === "DIAGRAM_ARTIFACT"
+		)
+		{
+			ownerGuid = issue.diagramGuid;
+		}
+
+		if (addin.utils.isEmpty(ownerGuid))
 			return true;
 
 		var objectResult =
 			this._getCheckObject(
 				result,
-				issue.objectGuid
+				ownerGuid
 			);
 
 		if (!objectResult)
