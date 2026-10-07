@@ -7680,7 +7680,21 @@ return {
 		return codes.join(";");
 	},
 	
-	_persistCheckResult: function(element, issues)
+	_persistCheckResult: function(object, checkResult)
+    {
+        var previous = addin.checkInvalidationSuppressed;
+        addin.checkInvalidationSuppressed = true;
+        try
+        {
+            return this.persistCheckResultWithoutInvalidation(object, checkResult);
+        }
+        finally
+        {
+            addin.checkInvalidationSuppressed = previous;
+        }
+    },
+
+    persistCheckResultWithoutInvalidation: function(element, issues)
 	{
 		if (!element)
 		{
@@ -12732,6 +12746,12 @@ return {
 			return false;
 		}
 
+		if (!addin.frameworkBA._setCheckRequired(targetElement, false))
+        {
+            addin.logger.error("Indicateur CHECK non réinitialisé | GUID=" + objectGuid);
+            return false;
+        }
+
 		addin.logger.info(
 			"CHECK objet persisté"
 			+ " | Type=" + snapshot.scope
@@ -12793,7 +12813,21 @@ return {
 	},
 
 
-	_persistCheckSnapshot: function(
+	_persistCheckSnapshot: function(object, checkResult)
+    {
+        var previous = addin.checkInvalidationSuppressed;
+        addin.checkInvalidationSuppressed = true;
+        try
+        {
+            return this._persistCheckSnapshotWithoutInvalidation(object, checkResult);
+        }
+        finally
+        {
+            addin.checkInvalidationSuppressed = previous;
+        }
+    },
+
+    _persistCheckSnapshotWithoutInvalidation: function(
 		rootPackage,
 		checkResult
 	)
@@ -12857,6 +12891,14 @@ return {
 				+ " | PersistedSize=" + persistedJson.length
 				+ " | Identical=" + (persistedJson === json)
 			);
+
+			if (persistedJson !== json)
+                return false;
+
+            // Un CHECK de package ne réinitialise jamais le root.
+            if (checkResult.scope === "ROOT" && checkResult.success &&
+                !addin.frameworkBA._setCheckRequired(rootElement, false))
+                return false;
 
 			addin.logger.info(
 				"Snapshot CHECK persisté"
