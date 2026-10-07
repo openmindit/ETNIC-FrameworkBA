@@ -3,6 +3,122 @@ var addin = this;
 
 return {
 
+    // L'indicateur signale un résultat potentiellement périmé.
+    // Il ne modifie ni le snapshot, ni son statut de conformité.
+    _setCheckRequired: function(element, required)
+    {
+        if (!element) return false;
+        var tag = addin.fbaConstants.TAG_CHECK_REQUIRED;
+        var value = required ? "true" : "false";
+        if (addin.repositoryService.getTaggedValue(element, tag) === value)
+            return true;
+
+        var previous = addin.checkInvalidationSuppressed;
+        addin.checkInvalidationSuppressed = true;
+        try
+        {
+            if (!addin.repositoryService.setTaggedValue(element, tag, value))
+                return false;
+            return addin.repositoryService.getTaggedValue(element, tag) === value;
+        }
+        finally
+        {
+            addin.checkInvalidationSuppressed = previous;
+        }
+    },
+
+    notifyContextItemModified: function(guid, objectType)
+    {
+        if (addin.checkInvalidationSuppressed || !guid) return false;
+        var object = null;
+        var targetPackage = null;
+        var targetElement = null;
+        var kind = "";
+
+        try
+        {
+            if (objectType == addin.eaConstants.otPackage)
+            {
+                object = addin.repositoryService.getPackageByGuid(guid);
+                targetPackage = object;
+                targetElement = object ? object.Element : null;
+                kind = "PACKAGE";
+            }
+            else if (objectType == addin.eaConstants.otElement)
+            {
+                object = addin.repositoryService.getElementByGuid(guid);
+                if (!object) return false;
+                // EA peut notifier le Package par son Element.
+                if (object.Type === "Package")
+                {
+                    targetPackage = addin.repositoryService.getPackageByElementId(object.ElementID);
+                    object = targetPackage;
+                    targetElement = targetPackage ? targetPackage.Element : null;
+                    kind = "PACKAGE";
+                }
+                else
+                {
+                    targetPackage = addin.repositoryService.getPackageById(object.PackageID);
+                    targetElement = object;
+                    kind = "ARTIFACT";
+                }
+            }
+            else if (objectType == addin.eaConstants.otDiagram)
+            {
+                object = addin.repositoryService.getDiagramByGuid(guid);
+                targetPackage = object
+                    ? addin.repositoryService.getPackageById(object.PackageID) : null;
+                kind = "DIAGRAM";
+            }
+            else return false;
+
+            if (!object || !targetPackage ||
+                addin.utils.isTechnicalName(object.Name) ||
+                addin.utils.isTechnicalName(targetPackage.Name))
+                return false;
+
+            var root = addin.analysisContextResolver._findAnalysisRoot(targetPackage);
+            if (!root || !root.Element) return false;
+
+            if (kind === "DIAGRAM")
+            {
+                var synchronizer = addin.analysisStructureSynchronizer;
+                var registry = synchronizer._resolveDiagramRegistryPackage(root);
+                targetElement = synchronizer._findDiagramRegistryEntryByGeneratedGuid(
+                    registry, object.DiagramGUID, null);
+            }
+
+            // Même sans DGC, le package et le root doivent être signalés.
+            var success = true;
+            if (targetElement)
+                success = this._setCheckRequired(targetElement, true) && success;
+            else
+            {
+                success = false;
+                addin.logger.warning("Indicateur CHECK objet indisponible | Type="
+                    + kind + " | GUID=" + guid);
+            }
+
+            if (kind !== "PACKAGE")
+                success = this._setCheckRequired(targetPackage.Element, true) && success;
+            if (root.PackageID !== targetPackage.PackageID || kind !== "PACKAGE")
+                success = this._setCheckRequired(root.Element, true) && success;
+
+            addin.logger.info("CHECK à renouveler | Type=" + kind
+                + " | Name=" + object.Name + " | GUID=" + guid
+                + " | Package=" + targetPackage.Name + " | Root=" + root.Name
+                + " | Success=" + success);
+            return success;
+        }
+        catch (e)
+        {
+            addin.logger.error("Invalidation CHECK en échec | GUID=" + guid
+                + " | Error=" + (e.description || e.message || String(e)));
+            return false;
+        }
+    },
+
+
 	_beginOperation: function(operation, analysisRoot)
 	{
 		addin.operationContext =
