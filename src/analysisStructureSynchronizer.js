@@ -12334,8 +12334,16 @@ return {
 				? ""
 				: String(modified);
 
+		if (!addin.utils.isEmpty(object.DiagramGUID))
+		{
+			// Diagram.Update() peut renommer sans changer ModifiedDate.
+			// JSON évite les ambiguïtés de concaténation des champs.
+			value = JSON.stringify([value, String(object.Name || "")]);
+		}
+
 		/*
-		 * V1 : l'empreinte représente uniquement Modified.
+		 * Diagrammes : ModifiedDate et nom exact.
+		 * Autres objets : Modified.
 		 *
 		 * Le CHECK et la consolidation ne connaissent pas cette
 		 * stratégie. Elle pourra donc évoluer ici sans modifier
