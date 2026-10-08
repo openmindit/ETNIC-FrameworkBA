@@ -17,18 +17,32 @@ function TestCheckSummaryNote()
         if (String(element.Name) !== "_CHECK - Synthèse")
             throw new Error("Nom attendu: _CHECK - Synthèse | Relu=" + element.Name);
         var original = String(element.Notes || "");
+        // Color tags are an EA rendering test, not browser HTML/CSS.
+        // Empty lines provide spacing without assuming CSS line-height support.
         var expected = [
-            "<b>SYNTHÈSE CHECK — TEST DE FORMATAGE</b>",
-            "<b>14 erreurs à traiter · 0 avertissement</b>",
+            '<font color="#1F4E79"><b>SYNTHÈSE CHECK — TEST DE FORMATAGE</b></font>',
             "",
-            "<b>Périmètre :</b> Exigences",
-            "<b>Dernier CHECK :</b> 08-10-2026 à 12:38",
-            "<b>Objets référencés :</b> 9 — 1 package · 3 artefacts · 5 diagrammes",
-            "<b>Conformité artefacts et diagrammes :</b> 1 conforme · 5 non conformes · 2 hors métamodèle",
-            "<b>Snapshots :</b> 8/8 attendus · 1 diagramme sans snapshot prévu",
+            '<font color="#C00000"><b>14 erreurs à traiter</b></font>'
+                + ' · <font color="#666666">0 avertissement</font>',
             "",
-            "<i>Données de test fixes ; actualisation automatique à intégrer après validation.</i>"
-        ].join("\r\n");
+            '<font color="#1F4E79"><b>Périmètre :</b></font> Exigences',
+            "",
+            '<font color="#1F4E79"><b>Dernier CHECK :</b></font> 08-10-2026 à 12:38',
+            "",
+            '<font color="#1F4E79"><b>Objets référencés :</b></font>'
+                + ' 9 — 1 package · 3 artefacts · 5 diagrammes',
+            "",
+            '<font color="#1F4E79"><b>Conformité artefacts et diagrammes :</b></font>'
+                + ' <font color="#267326">1 conforme</font>'
+                + ' · <font color="#C00000">5 non conformes</font>'
+                + ' · <font color="#9C6500">2 hors métamodèle</font>',
+            "",
+            '<font color="#1F4E79"><b>Snapshots :</b></font> 8/8 attendus'
+                + ' · <font color="#666666">1 diagramme sans snapshot prévu</font>',
+            "",
+            '<font color="#666666"><i>Données de test fixes ; actualisation automatique'
+                + ' à intégrer après validation.</i></font>'
+        ].join("\\r\\n");
         log("Objet=" + element.Name + " | Type=" + element.Type);
         if (original !== expected) {
             element.Notes = expected;
@@ -44,7 +58,7 @@ function TestCheckSummaryNote()
         log("Notes relues=" + actual);
         if (actual.indexOf("14 erreurs à traiter") < 0)
             throw new Error("Texte du test absent après relecture.");
-        log("Fin | Vérifier visuellement le rendu du gras et des retours à la ligne.");
+        log("Fin | Vérifier visuellement le rendu du gras, des couleurs et des lignes espacées.");
     } catch (error) {
         log("Erreur=" + error.message);
     }
