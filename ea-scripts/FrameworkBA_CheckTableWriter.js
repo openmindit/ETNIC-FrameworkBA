@@ -1,7 +1,7 @@
 /**
  * EA JavaScript library: ETNIC_FrameworkBA.FrameworkBA_CheckTableWriter.
- * Writes only the existing CustomTable data memo tag.
- * Never modifies dataFormat, colors, or ElementGrid.
+ * Writes the data memo and synchronizes only dataFormat grid.rows.
+ * Preserves styles, columns and layout; never modifies colors or ElementGrid.
  */
 var FrameworkBA_CheckTableWriter = (function () {
     var busy = false;
@@ -134,34 +134,61 @@ var FrameworkBA_CheckTableWriter = (function () {
             if (!data || !format)
                 throw new Error("Tags data/dataFormat absents sur " + table.Name);
             var rows = buildRows(result);
-            var grid = /<grid\b[^>]*>/i.exec(tagText(format));
-            var rowCount = grid && /\brows\s*=\s*["'](\d+)["']/i.exec(grid[0]);
-            var columnCount = grid && /\bcolumns\s*=\s*["'](\d+)["']/i.exec(grid[0]);
+            var originalFormat = tagText(format);
+            var grids = originalFormat.match(/<grid\b[^>]*>/gi);
+            if (!grids || grids.length !== 1)
+                throw new Error("Une seule grille est requise; aucune ecriture effectuee.");
+            var grid = grids[0];
+            var rowCount = /\brows\s*=\s*["'](\d+)["']/i.exec(grid);
+            var columnCount = /\bcolumns\s*=\s*["'](\d+)["']/i.exec(grid);
             if (!rowCount || !columnCount)
-                throw new Error("Dimensions de la grille illisibles; dataFormat conserve.");
-            if (Number(columnCount[1]) !== 5 || Number(rowCount[1]) < rows.length)
-                throw new Error("Configurer manuellement le CustomTable: "
-                    + rows.length + " lignes minimum et 5 colonnes. Aucune ecriture effectuee.");
-            var xml = buildXml(rows);
-            var changed = !sameRows(rows, readRows(tagText(data)));
-            if (changed) {
+                throw new Error("Dimensions de la grille illisibles; aucune ecriture effectuee.");
+            if (Number(columnCount[1]) !== 5)
+                throw new Error("Configurer 5 colonnes manuellement; aucune ecriture effectuee.");
+
+            // Change only the rows attribute, preserving all other XML bytes.
+            var newGrid = grid.replace(/(\brows\s*=\s*["'])\d+(["'])/i,
+                function (match, prefix, suffix) { return prefix + rows.length + suffix; });
+            var newFormat = originalFormat.replace(grid, newGrid);
+            var dataChanged = !sameRows(rows, readRows(tagText(data)));
+            var formatChanged = newFormat !== originalFormat;
+            var changed = dataChanged || formatChanged;
+            output("Grille | Avant=" + rowCount[1] + " | Apres=" + rows.length
+                + " | Colonnes=5");
+            if (dataChanged) {
                 data.Value = "<memo>";
-                data.Notes = xml;
+                data.Notes = buildXml(rows);
                 var updated = data.Update();
                 output("Tag.Update=" + updated);
                 if (!updated) throw new Error("Echec sauvegarde du tag data.");
             }
+            if (formatChanged) {
+                format.Value = "<memo>";
+                format.Notes = newFormat;
+                var formatUpdated = format.Update();
+                output("DataFormat.Update=" + formatUpdated);
+                if (!formatUpdated)
+                    throw new Error("Echec sauvegarde de dataFormat; verifier la grille avant affichage.");
+            }
             var reloaded = repository.GetElementByGuid(tableGuid);
             var persisted = findTag(reloaded, "data");
+            var persistedFormat = findTag(reloaded, "dataFormat");
             if (!persisted || !sameRows(rows, readRows(tagText(persisted))))
                 throw new Error("Les cellules relues different des cellules attendues.");
+            var verifiedGrid = persistedFormat && /<grid\b[^>]*>/i.exec(tagText(persistedFormat));
+            var verifiedRows = verifiedGrid && /\brows\s*=\s*["'](\d+)["']/i.exec(verifiedGrid[0]);
+            var verifiedColumns = verifiedGrid && /\bcolumns\s*=\s*["'](\d+)["']/i.exec(verifiedGrid[0]);
+            if (!verifiedRows || Number(verifiedRows[1]) !== rows.length
+                || !verifiedColumns || Number(verifiedColumns[1]) !== 5)
+                throw new Error("Les dimensions relues different des dimensions attendues.");
             output("Table=" + table.Name + " | Lignes=" + rows.length
                 + " | Anomalies=" + result.issues.length + " | Cellules identiques=true"
-                + " | Modifie=" + changed);
+                + " | Grille verifiee=true | Modifie=" + changed);
             // No refresh when unchanged: prevents repeated writes on diagram reload.
             if (changed && options.refresh !== false)
                 repository.AdviseElementChange(table.ElementID);
-            return { changed: changed, rows: rows.length, issues: result.issues.length };
+            return { changed: changed, dataChanged: dataChanged, formatChanged: formatChanged,
+                rows: rows.length, issues: result.issues.length };
         } finally {
             busy = false;
         }

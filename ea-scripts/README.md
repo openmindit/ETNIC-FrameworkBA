@@ -64,20 +64,30 @@ Use FrameworkBA_CheckTable.scriptlet.js on the diagram containing the table.
 The example finds a single element named "_CHECK — Détail des résultats" on
 the Scriptlet's theDiagram. Change the name to match your model exactly.
 
-Before running, manually configure the table with 5 columns and enough rows:
-header + collected issues + objects without planned snapshots.
-The current test requires 17 rows (1 + 15 + 1). Extra configured rows are allowed.
-Insufficient dimensions abort before any write; the writer NEVER edits dataFormat.
+The table must have 5 columns. grid.rows is synchronized automatically with
+header + collected issues + information rows, including shrink and growth.
+The writer replaces only the rows attribute of the existing grid, preserving
+all remaining dataFormat bytes (styles and layout). No color generation is used.
+An absent/ambiguous grid or a column count other than 5 aborts before any write.
 
 The writer preserves collected issue order, translates known actions and supplies
 readable labels for technical-name issues without a message. Original object names
 are retained. Information rows have no CHECK severity and do not add to issue counts.
 
-Only the existing data memo tag is saved. Verification compares decoded row/cell
+The existing data and dataFormat memo tags are saved only when changed. Verification compares decoded row/cell
 values after reloading, so XML whitespace/entity normalization is tolerated.
 AdviseElementChange is called only after changed data has been verified.
-Identical repeat runs skip writes and refresh. options.refresh=false disables refresh.
+Grid dimensions are also verified after reloading. Identical repeat runs skip writes and refresh. options.refresh=false disables refresh.
 No colors, ElementGrid mutations, or automatic entry point are included.
 
 Keep diagrams without planned snapshots explicitly declared in this test;
 aggregate foreign metrics do not identify individual diagrams.
+
+## EA validation for automatic row count
+
+Run the unchanged Scriptlet after updating FrameworkBA_CheckTableWriter.
+With 14 issues and one information row, expect grid.rows=16.
+Check the footer and paging visually; tag persistence alone does not verify rendering.
+Styles and the opaque layout block are preserved rather than regenerated.
+The earlier UpdateCheckColors crash is not reproduced by mock tests; this minimal
+row-only update still requires validation in the EA test model.
