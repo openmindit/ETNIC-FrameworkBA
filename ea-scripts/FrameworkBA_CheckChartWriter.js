@@ -176,6 +176,15 @@ var FrameworkBA_CheckChartWriter = (function () {
             repository.WriteOutput("ETNIC_FrameworkBA", "[CHECK CHART] " + message, 0);
         };
         var data = aggregate(result, kind);
+        return saveData(chartGuid, data, options);
+    }
+    function saveData(chartGuid, data, options) {
+        options = options || {};
+        var repository = options.repository || Repository;
+        var output = options.output || function (message) {
+            repository.WriteOutput("ETNIC_FrameworkBA", "[CHECK CHART] " + message, 0);
+        };
+        validateData(data);
         var element = repository.GetElementByGuid(chartGuid);
         if (!element) throw new Error("Graphique introuvable: " + chartGuid);
         if (String(element.Stereotype) !== "SSDynamicChart")
@@ -198,7 +207,7 @@ var FrameworkBA_CheckChartWriter = (function () {
             if (options.refresh !== false)
                 repository.AdviseElementChange(element.ElementID);
         }
-        output("Graphique=" + element.Name + " | Type=" + kind
+        output("Graphique=" + element.Name + " | Type=" + data.kind
             + " | Total=" + data.total + " | Groupes=" + data.items.length
             + " | Date=" + data.checkedAt + " | Modifie=" + changed);
         return { changed: changed, data: data };
@@ -242,7 +251,111 @@ var FrameworkBA_CheckChartWriter = (function () {
         return data;
     }
 
+
+    function payload(result, kind, scope, title, items) {
+        var total = 0;
+        for (var i = 0; i < items.length; i++) total += items[i].count;
+        return { schemaVersion: 1, kind: kind, scope: scope, chartType: "PIE",
+            title: title, packageGuid: result.packageGuid, checkedAt: result.checkedAt,
+            missingSnapshots: result.summary ? result.summary.missing || 0 : 0,
+            total: total, items: items };
+    }
+    function prepareConformity(result, scope) {
+        var values = conformity(result.metrics, scope);
+        var titles = { ALL: "Conformité des artefacts et diagrammes",
+            ARTIFACT: "Conformité des artefacts", DIAGRAM: "Conformité des diagrammes" };
+        return payload(result, "CONFORMITY", scope, titles[scope], [
+            { name: "Conformes", count: values.compliant },
+            { name: "Non conformes", count: values.nonCompliant },
+            { name: "Étrangers", count: values.foreign }
+        ]);
+    }
+    // The same CHECK content as the table: target package, artifacts and diagrams.
+    // Technical takes precedence; metamodel membership is independent of conformity.
+    function prepareClassification(result, scope, options) {
+        options = options || {};
+        var confirmedForeign = options.foreignDiagramGuids || [];
+        var allowed = { ALL: true, PACKAGE: true, ARTIFACT: true, DIAGRAM: true };
+        if (!own(allowed, scope)) throw new Error("Perimetre inconnu: " + scope);
+        if (!result.summary || result.summary.missing > 0)
+            throw new Error("Classification impossible: snapshots manquants.");
+        var totals = { technical: 0, business: 0, outside: 0 };
+        var seen = {};
+        function add(guid, type, name, recognized, technical) {
+            var id = key(guid);
+            if (own(seen, id)) throw new Error("Objet de classification dupliqué: " + guid);
+            seen[id] = true;
+            if (scope !== "ALL" && scope !== type) return;
+            if (technical === true) totals.technical++;
+            else if (recognized === true) totals.business++;
+            else if (recognized === false) totals.outside++;
+            else throw new Error("Appartenance au métamodèle indéterminée: " + name);
+        }
+        for (var i = 0; i < result.snapshots.length; i++) {
+            var snapshot = result.snapshots[i], object = snapshot.object;
+            var type = String(object.type || snapshot.scope).toUpperCase();
+            var recognized = null;
+            var technical = /^_/.test(String(object.name || "").replace(/^\\s+|\\s+$/g, ""));
+            var rules = snapshot.ruleResults || [];
+            for (var r = 0; r < rules.length; r++) {
+                var rule = rules[r];
+                if (key(rule.objectGuid) !== key(object.guid)) continue;
+                if (rule.rule === "ANALYSIS_ELEMENT_REFERENCE" && type === "PACKAGE"
+                    && rule.actual && typeof rule.actual.found === "boolean")
+                    recognized = rule.actual.found;
+                if (rule.rule === "ARTIFACT_TECHNICAL_NAMING" && type === "ARTIFACT"
+                    || rule.rule === "DIAGRAM_TECHNICAL_NAMING" && type === "DIAGRAM") {
+                    recognized = true; // Framework emits these only for matched definitions.
+                    if (rule.actual && typeof rule.actual.technicalName === "boolean")
+                        technical = rule.actual.technicalName;
+                }
+            }
+            for (var j = 0; j < snapshot.issues.length; j++) {
+                var code = String(snapshot.issues[j].code || snapshot.issues[j].rule || "");
+                if (code === "ARTIFACT_NOT_IN_METAMODEL" && type === "ARTIFACT"
+                    || code === "DIAGRAM_NOT_IN_METAMODEL" && type === "DIAGRAM")
+                    recognized = false;
+            }
+            add(object.guid, type, object.name, recognized, technical);
+        }
+        var without = result.objectsWithoutSnapshot || [];
+        // These explicit GUIDs are confirmed foreign diagrams in the test configuration.
+        // Cross-check against the package aggregate; never guess a GUID from a count.
+        if (without.length) {
+            var foreign = count(result.metrics.diagrams.foreign, "diagrams.foreign");
+            var foreignWithSnapshot = 0;
+            for (var d = 0; d < result.snapshots.length; d++) {
+                var ds = result.snapshots[d];
+                if (String(ds.object.type || ds.scope).toUpperCase() !== "DIAGRAM") continue;
+                for (var q = 0; q < ds.issues.length; q++)
+                    if (ds.issues[q].code === "DIAGRAM_NOT_IN_METAMODEL") {
+                        foreignWithSnapshot++; break;
+                    }
+            }
+            if (foreignWithSnapshot + without.length !== foreign)
+                throw new Error("Diagrammes sans snapshot: appartenance à confirmer.");
+            for (var w = 0; w < without.length; w++) {
+                var obj = without[w];
+                var confirmed = false;
+                for (var f = 0; f < confirmedForeign.length; f++)
+                    if (key(confirmedForeign[f]) === key(obj.objectGuid)) confirmed = true;
+                if (!confirmed)
+                    throw new Error("Diagramme sans snapshot non confirmé hors métamodèle: " + obj.objectName);
+                add(obj.objectGuid, "DIAGRAM", obj.objectName, false,
+                    /^_/.test(String(obj.objectName || "").replace(/^\\s+|\\s+$/g, "")));
+            }
+        }
+        var titles = { ALL: "Classification des objets", PACKAGE: "Classification des packages",
+            ARTIFACT: "Classification des artefacts", DIAGRAM: "Classification des diagrammes" };
+        return payload(result, "CLASSIFICATION", scope, titles[scope], [
+            { name: "Techniques", count: totals.technical },
+            { name: "Métier — métamodèle", count: totals.business },
+            { name: "Hors métamodèle", count: totals.outside }
+        ]);
+    }
+
     return { renderConformity: renderConformity, conformity: conformity,
         renderActions: renderActions, renderIssues: renderIssues,
-        renderStored: renderStored, aggregate: aggregate };
+        renderStored: renderStored, aggregate: aggregate, saveData: saveData,
+        prepareConformity: prepareConformity, prepareClassification: prepareClassification };
 })();

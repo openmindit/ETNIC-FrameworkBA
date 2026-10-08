@@ -142,3 +142,35 @@ Classification payload preparation is also a subsequent step.
 The normal-script write and ACTIONS rendering were validated by the user in EA.
 The generalized renderer requires an EA test; Node mocks cannot validate EA
 loading order or the earlier application crash.
+
+## Refresh check result: all nine stored chart payloads
+
+Install the complete FrameworkBA_CheckChartWriter library, then replace the Notes
+of the existing Refresh check result Scriptlet with FrameworkBA_CheckDashboard.scriptlet.js.
+Use FrameworkBA_CheckIssues.chart.js as ConstructChart for all nine charts.
+The nine element names in the dashboard configuration must match exactly.
+Target resolution and all payload calculations finish before writing begins.
+Writes are sequential, not transactional; an EA persistence failure can leave earlier
+targets updated. Re-execution completes unchanged targets idempotently.
+
+One collector result feeds the table, three conformity pies, actions/anomalies bars,
+and four classification pies. Missing tags are created as memo tags. Chart writes
+use refresh=false; only the already-tested table notification remains. There are
+no GetChart/Redraw calls or chart refresh notifications in the Scriptlet.
+Opening order is still an EA runtime validation point: if ConstructChart ran before
+preparation, reopen the diagram after the tags exist. No redraw loop is introduced.
+
+Classification covers exactly the target package plus content artifacts/diagrams;
+it does not recursively classify the entire analysis folder or dashboard elements.
+Technical names use the framework "_" prefix (snapshot technicalName when present).
+Technical has priority over metamodel membership. Recognized objects are identified
+by framework TECHNICAL_NAMING rules or package ANALYSIS_ELEMENT_REFERENCE.actual.found.
+NOT_IN_METAMODEL issues identify foreign objects. Unknown membership aborts rather
+than guessing. Diagrams without snapshots additionally require explicit confirmed
+foreign GUIDs and an aggregate consistency check. The included GUID is the confirmed
+TEST_FOREIGN_DIAGRAM, not a general inference from a foreign count.
+Classification is independent of conformity.
+
+Node mocks validate the current nine-object fixture (4 technical, 3 business,
+2 outside), scope totals, foreign confirmation, tag creation and idempotence.
+These tests do not establish EA Scriptlet execution order or application stability.
