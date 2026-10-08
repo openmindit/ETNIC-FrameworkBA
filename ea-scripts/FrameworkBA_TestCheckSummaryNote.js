@@ -42,7 +42,7 @@ function TestCheckSummaryNote()
             "",
             '<font color="#666666"><i>Données de test fixes ; actualisation automatique'
                 + ' à intégrer après validation.</i></font>'
-        ].join("\\r\\n");
+        ].join("\r\n");
         log("Objet=" + element.Name + " | Type=" + element.Type);
         if (original !== expected) {
             element.Notes = expected;
