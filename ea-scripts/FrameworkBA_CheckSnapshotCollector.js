@@ -1,9 +1,9 @@
 /**
- * EA Scripting library: ETNIC_FrameworkBA.checkSnapshotCollector
+ * EA Scripting library: ETNIC_FrameworkBA.FrameworkBA_CheckSnapshotCollector
  * Language: JavaScript (same language as the calling Scriptlet).
  * Read-only: no Update, dataFormat write, refresh, or automatic execution.
  */
-var ETNIC_CheckSnapshotCollector = (function () {
+var FrameworkBA_CheckSnapshotCollector = (function () {
     function guidKey(value) {
         return String(value || "").replace(/[{}]/g, "").toUpperCase();
     }

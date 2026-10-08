@@ -5,9 +5,9 @@ This directory contains standalone EA JavaScript scripts, separate from the Scri
 ## Installation in Enterprise Architect
 
 1. Open the Scripting window.
-2. In the normal script group ETNIC_FrameworkBA, create a **JavaScript** script named checkSnapshotCollector.
-3. Paste the entire contents of checkSnapshotCollector.js and save.
-4. Paste checkSnapshotCollector.scriptlet.js into the existing Scriptlet.
+2. In the normal script group ETNIC_FrameworkBA, create a **JavaScript** script named FrameworkBA_CheckSnapshotCollector.
+3. Paste the entire contents of FrameworkBA_CheckSnapshotCollector.js and save.
+4. Paste FrameworkBA_CheckSnapshotCollector.scriptlet.js into the existing Scriptlet.
 5. Replace the package and root GUIDs for another analysis folder.
 
 The library and Scriptlet must use JavaScript. The library has no automatic entry point.
@@ -15,7 +15,7 @@ Git updates do not automatically update scripts stored in the EA model.
 
 ## API
 
-ETNIC_CheckSnapshotCollector.collect(packageGuid, rootGuid, options)
+FrameworkBA_CheckSnapshotCollector.collect(packageGuid, rootGuid, options)
 
 Returns packageGuid, checkedAt, snapshots, issues, summary, diagnostics.
 options can override repository, output(message), and tagName for testing.
@@ -55,3 +55,29 @@ declared diagrams without snapshots; summary.expected/found/missing count planne
 snapshots. The result also exposes the original package metrics and
 objectsWithoutSnapshot. No CHECK issue or severity is manufactured for these objects.
 Complete snapshot retrieval does not imply detailed foreign-diagram issues are available.
+
+## CustomTable writer
+
+Install FrameworkBA_CheckTableWriter.js as a JavaScript script named
+FrameworkBA_CheckTableWriter in ETNIC_FrameworkBA.
+Use FrameworkBA_CheckTable.scriptlet.js on the diagram containing the table.
+The example finds a single element named "_CHECK — Détail des résultats" on
+the Scriptlet's theDiagram. Change the name to match your model exactly.
+
+Before running, manually configure the table with 5 columns and enough rows:
+header + collected issues + objects without planned snapshots.
+The current test requires 17 rows (1 + 15 + 1). Extra configured rows are allowed.
+Insufficient dimensions abort before any write; the writer NEVER edits dataFormat.
+
+The writer preserves collected issue order, translates known actions and supplies
+readable labels for technical-name issues without a message. Original object names
+are retained. Information rows have no CHECK severity and do not add to issue counts.
+
+Only the existing data memo tag is saved. Verification compares decoded row/cell
+values after reloading, so XML whitespace/entity normalization is tolerated.
+AdviseElementChange is called only after changed data has been verified.
+Identical repeat runs skip writes and refresh. options.refresh=false disables refresh.
+No colors, ElementGrid mutations, or automatic entry point are included.
+
+Keep diagrams without planned snapshots explicitly declared in this test;
+aggregate foreign metrics do not identify individual diagrams.
