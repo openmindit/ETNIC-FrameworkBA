@@ -24,6 +24,13 @@ var ETNIC_CheckSnapshotCollector = (function () {
         var issues = [];
         var snapshots = [];
         var diagnostics = [];
+        var noSnapshot = {};
+        var objectsWithoutSnapshot = [];
+        var declarations = options.diagramGuidsWithoutSnapshot || [];
+        if (!isArray(declarations))
+            throw new Error("diagramGuidsWithoutSnapshot doit etre un tableau.");
+        for (var n = 0; n < declarations.length; n++)
+            noSnapshot[guidKey(declarations[n])] = true;
 
         function diagnose(message) {
             diagnostics.push(message);
@@ -141,10 +148,30 @@ var ETNIC_CheckSnapshotCollector = (function () {
         accept(packageSnapshot, target.Element.Name);
         visitPackage(root);
 
-        var summary = { expected: 0, found: 0, missing: 0, issues: issues.length,
+        // Only explicit declarations identify diagrams without a planned snapshot.
+        // Aggregate foreign counts cannot identify individual GUIDs.
+        for (var declaredKey in noSnapshot) {
+            if (!Object.prototype.hasOwnProperty.call(noSnapshot, declaredKey)) continue;
+            if (!expected[declaredKey] || expected[declaredKey].type !== "DIAGRAM")
+                throw new Error("Diagramme sans snapshot non reference dans content: " + declaredKey);
+        }
+        var summary = { referenced: 0, notPlanned: 0, expected: 0, found: 0, missing: 0, issues: issues.length,
             errors: 0, warnings: 0 };
         for (var key in expected) {
             if (!Object.prototype.hasOwnProperty.call(expected, key)) continue;
+            summary.referenced++;
+            if (noSnapshot[key] && !collected[key]) {
+                var diagram = repository.GetDiagramByGuid(expected[key].guid);
+                if (diagram) {
+                    summary.notPlanned++;
+                    objectsWithoutSnapshot.push({ objectGuid: expected[key].guid,
+                        objectType: "DIAGRAM", objectName: String(diagram.Name) });
+                    output("Snapshot non prevu | Objet=" + diagram.Name
+                        + " | Type=DIAGRAM | GUID=" + expected[key].guid);
+                    continue;
+                }
+                diagnose("Diagramme declare sans snapshot introuvable | GUID=" + expected[key].guid);
+            }
             summary.expected++;
             if (collected[key]) summary.found++;
             else {
@@ -175,11 +202,18 @@ var ETNIC_CheckSnapshotCollector = (function () {
                 + " | Code=" + issues[r].code + " | Anomalie=" + issues[r].message
                 + " | Action=" + issues[r].action);
         }
-        output("Bilan | Snapshots=" + summary.found + "/" + summary.expected
+        var metrics = packageSnapshot.metrics || {};
+        output("Metriques package | Artefacts etrangers="
+            + (metrics.artifacts ? metrics.artifacts.foreign : "?")
+            + " | Diagrammes etrangers="
+            + (metrics.diagrams ? metrics.diagrams.foreign : "?"));
+        output("Bilan | Objets references=" + summary.referenced
+            + " | Snapshots non prevus=" + summary.notPlanned + " | Snapshots=" + summary.found + "/" + summary.expected
             + " | Manquants=" + summary.missing + " | Anomalies=" + summary.issues
             + " | ERROR=" + summary.errors + " | WARNING=" + summary.warnings);
         return { packageGuid: packageGuid, checkedAt: packageSnapshot.checkedAt,
-            snapshots: snapshots, issues: issues, summary: summary, diagnostics: diagnostics };
+            snapshots: snapshots, issues: issues, summary: summary, diagnostics: diagnostics,
+            metrics: metrics, objectsWithoutSnapshot: objectsWithoutSnapshot };
     }
 
     return { collect: collect };

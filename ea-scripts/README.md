@@ -38,3 +38,20 @@ colors, or diagram display. Keep UpdateCheckColors disabled.
 The included Scriptlet uses the Exigences package and analysis root GUIDs from
 the test model. Its content lists 3 artifacts and 5 diagrams, so 9 snapshots
 are expected including the package.
+
+## Diagrams without a planned snapshot
+
+options.diagramGuidsWithoutSnapshot is an explicit array of confirmed diagram GUIDs
+for which the framework does not plan an individual snapshot. The example declares
+TEST_FOREIGN_DIAGRAM from the test model. Adapt this list for another package.
+
+Do not infer identities from metrics.diagrams.foreign: it is only an aggregate count.
+A declaration must reference content.diagrams and the diagram must still exist.
+Other missing snapshots remain missing. If a declared diagram actually has a snapshot,
+it is collected normally.
+
+summary.referenced counts all referenced objects; summary.notPlanned counts existing
+declared diagrams without snapshots; summary.expected/found/missing count planned
+snapshots. The result also exposes the original package metrics and
+objectsWithoutSnapshot. No CHECK issue or severity is manufactured for these objects.
+Complete snapshot retrieval does not imply detailed foreign-diagram issues are available.
