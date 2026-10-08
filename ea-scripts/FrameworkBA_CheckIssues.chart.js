@@ -3,5 +3,10 @@
 
 function ConstructChart(guid)
 {
-    FrameworkBA_CheckChartWriter.renderStored(guid);
+    try {
+        FrameworkBA_CheckChartWriter.renderStored(guid);
+    } catch (error) {
+        Repository.WriteOutput("ETNIC_FrameworkBA",
+            "[CHECK CHART] Erreur=" + error.message, 0);
+    }
 }

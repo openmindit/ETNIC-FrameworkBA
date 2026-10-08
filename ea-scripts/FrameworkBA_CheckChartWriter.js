@@ -1,7 +1,7 @@
 /**
  * EA JavaScript library: ETNIC_FrameworkBA.FrameworkBA_CheckChartWriter.
- * First stage: real PACKAGE CHECK metrics for conformity pie charts.
- * Called only from a DynamicChart's ConstructChart(guid).
+ * Shared stored-data rendering for native CHECK pie and bar charts.
+ * renderStored/renderConformity are called only from ConstructChart(guid).
  * Include Local Scripts.ChartAutomation in the calling chart script.
  */
 var FrameworkBA_CheckChartWriter = (function () {
@@ -133,7 +133,7 @@ var FrameworkBA_CheckChartWriter = (function () {
             return b.count - a.count || (a.name < b.name ? -1 : (a.name > b.name ? 1 : 0));
         });
         return {
-            schemaVersion: 1, kind: kind,
+            schemaVersion: 1, kind: kind, chartType: "BAR",
             title: kind === "ACTIONS" ? "Actions recommandées" : "Répartition des anomalies",
             packageGuid: String(result.packageGuid || ""),
             checkedAt: String(result.checkedAt || ""),
@@ -155,13 +155,15 @@ var FrameworkBA_CheckChartWriter = (function () {
     }
     function validateData(data) {
         if (!data || data.schemaVersion !== 1 ||
-            (data.kind !== "ACTIONS" && data.kind !== "ISSUES") ||
+            (data.kind !== "ACTIONS" && data.kind !== "ISSUES"
+                && data.kind !== "CONFORMITY" && data.kind !== "CLASSIFICATION") ||
             Object.prototype.toString.call(data.items) !== "[object Array]")
             throw new Error("Donnees du graphique invalides.");
         count(data.total, "total");
         var sum = 0;
         for (var i = 0; i < data.items.length; i++) {
-            if (typeof data.items[i].name !== "string")
+            if (!data.items[i] || typeof data.items[i].name !== "string"
+                || data.items[i].name === "")
                 throw new Error("Libelle de graphique invalide.");
             sum += count(data.items[i].count, "items.count");
         }
@@ -207,30 +209,36 @@ var FrameworkBA_CheckChartWriter = (function () {
     function renderIssues(chartGuid, result, options) {
         return saveAggregate(chartGuid, result, "ISSUES", options);
     }
-    // Called by the chart's own ConstructChart: no second CHECK collection.
+    // Only reads stored data; never collects CHECK or writes tags.
     function renderStored(chartGuid, options) {
         options = options || {};
+        var repository = options.repository || Repository;
+        var output = options.output || function (message) {
+            repository.WriteOutput("ETNIC_FrameworkBA", "[CHECK CHART] " + message, 0);
+        };
         var element = options.element || GetElementByGuid(chartGuid);
         if (!element) throw new Error("DynamicChart introuvable.");
         var tag = findDataTag(element);
-        var chart = element.GetChart();
-        chart.SetChartType(9, 1, false, true);
-        if (!tag) {
-            chart.Title = "CHECK — Actualiser les résultats";
-            chart.Redraw();
-            return null;
-        }
+        if (!tag) throw new Error("Tag " + DATA_TAG + " absent sur " + element.Name);
         var data = readData(tag);
         validateData(data);
-        chart.Title = data.title + " (" + data.total + ")"
+        // Legacy ACTIONS/ISSUES tags have no chartType.
+        var chartType = data.chartType ||
+            (data.kind === "ACTIONS" || data.kind === "ISSUES" ? "BAR" : "PIE");
+        if (chartType !== "BAR" && chartType !== "PIE")
+            throw new Error("Type de graphique inconnu: " + chartType);
+        output("Debut | Graphique=" + element.Name + " | Type=" + chartType
+            + " | Total=" + data.total + " | Groupes=" + data.items.length);
+        var chart = element.GetChart();
+        chart.SetChartType(chartType === "PIE" ? 2 : 9, 1, false, true);
+        chart.Title = String(data.title || element.Name) + " (" + data.total + ")"
             + (data.missingSnapshots > 0 ? " — Collecte incomplète" : "");
-        var series = chart.CreateSeries(
-            data.kind === "ACTIONS" ? "Nombre de recommandations" : "Nombre d’anomalies"
-        );
+        var series = chart.CreateSeries("Nombre");
         for (var i = 0; i < data.items.length; i++)
             series.AddDataPoint3(label(data.items[i].name, data.items[i].count, data.total),
                 data.items[i].count);
         chart.Redraw();
+        output("Fin | Date CHECK=" + String(data.checkedAt || ""));
         return data;
     }
 

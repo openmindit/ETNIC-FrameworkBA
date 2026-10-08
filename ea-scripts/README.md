@@ -98,7 +98,9 @@ Update FrameworkBA_CheckChartWriter in the EA JavaScript group ETNIC_FrameworkBA
 In both DynamicChart elements replace the simulated code with
 FrameworkBA_CheckIssues.chart.js. Keep the conformity chart scripts unchanged.
 
-Use FrameworkBA_CheckDashboard.scriptlet.js for the table and these two charts.
+The integrated FrameworkBA_CheckDashboard.scriptlet.js remains experimental: EA closed during a previous test. Keep chart preparation in a normal EA script until integration is validated. The table-only Scriptlet remains the validated path.
+
+FrameworkBA_CheckDashboard.scriptlet.js is the integration candidate for the table and these two charts.
 Its target element names are "Actions recommandées" and "Répartition des anomalies".
 They must match the EA element names exactly, not only the displayed chart titles.
 The already-existing output tab ETNIC_FrameworkBA is reused and never cleared.
@@ -119,3 +121,24 @@ An incomplete collection is marked in the chart title.
 All target payloads are saved before notifications. Only changed targets are refreshed.
 If EA does not immediately reconstruct a chart after AdviseElementChange, reopen the
 diagram to run ConstructChart from the saved data.
+
+## Shared stored-data renderer
+
+Install the entire updated FrameworkBA_CheckChartWriter.js in EA; do not append a
+second definition of renderStored. FrameworkBA_CheckIssues.chart.js is the common
+ConstructChart wrapper and logs errors to the existing ETNIC_FrameworkBA tab.
+
+Each chart owns its FrameworkBA_CheckChart_Data memo tag:
+schemaVersion=1, kind (ACTIONS/ISSUES/CONFORMITY/CLASSIFICATION), optional scope,
+chartType (BAR/PIE), title, packageGuid, checkedAt, total, items [{name,count}].
+Counts must be nonnegative integers and their sum must equal total.
+Old ACTIONS/ISSUES tags without chartType remain compatible and render as bars.
+CONFORMITY/CLASSIFICATION default to PIE. An explicit unknown chartType is rejected.
+Validation occurs before GetChart; rendering never writes tags or collects snapshots.
+
+Existing renderConformity remains available. Keep the working conformity chart
+scripts until their stored payload preparation has been implemented.
+Classification payload preparation is also a subsequent step.
+The normal-script write and ACTIONS rendering were validated by the user in EA.
+The generalized renderer requires an EA test; Node mocks cannot validate EA
+loading order or the earlier application crash.
