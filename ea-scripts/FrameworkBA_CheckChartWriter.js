@@ -196,7 +196,20 @@ var FrameworkBA_CheckChartWriter = (function () {
             try { changed = JSON.stringify(readData(tag)) !== json; } catch (ignore) {}
         }
         if (changed) {
-            if (!tag) tag = element.TaggedValues.AddNew(DATA_TAG, "<memo>");
+            if (!tag) {
+                output("Création tag | Graphique=" + element.Name + " | Tag=" + DATA_TAG);
+                tag = element.TaggedValues.AddNew(DATA_TAG, "<memo>");
+                // Some execution contexts may not return the newly added object.
+                if (!tag) tag = findDataTag(element);
+                if (!tag) {
+                    var refreshedElement = repository.GetElementByGuid(chartGuid);
+                    if (refreshedElement) tag = findDataTag(refreshedElement);
+                }
+                if (!tag)
+                    throw new Error("Création du tag indisponible dans ce contexte EA"
+                        + " | Graphique=" + element.Name + " | Tag=" + DATA_TAG
+                        + " | AddNew n’a retourné aucun tag et la relecture ne le trouve pas.");
+            }
             tag.Value = "<memo>";
             tag.Notes = json;
             if (!tag.Update()) throw new Error("Echec sauvegarde des donnees du graphique.");
