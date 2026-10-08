@@ -91,3 +91,31 @@ Check the footer and paging visually; tag persistence alone does not verify rend
 Styles and the opaque layout block are preserved rather than regenerated.
 The earlier UpdateCheckColors crash is not reproduced by mock tests; this minimal
 row-only update still requires validation in the EA test model.
+
+## Actions and anomalies: one collection shared with the table
+
+Update FrameworkBA_CheckChartWriter in the EA JavaScript group ETNIC_FrameworkBA.
+In both DynamicChart elements replace the simulated code with
+FrameworkBA_CheckIssues.chart.js. Keep the conformity chart scripts unchanged.
+
+Use FrameworkBA_CheckDashboard.scriptlet.js for the table and these two charts.
+Its target element names are "Actions recommandées" and "Répartition des anomalies".
+They must match the EA element names exactly, not only the displayed chart titles.
+The already-existing output tab ETNIC_FrameworkBA is reused and never cleared.
+
+The Scriptlet collects once. The table uses result.issues and each chart saves only
+its compact grouped counts to its FrameworkBA_CheckChart_Data memo tag. Its own
+ConstructChart reads that tag, so chart loading does not repeat the collection or
+restore simulated values. The new memo tag is created when absent.
+No full snapshot duplication and no CustomTable XML parsing is involved.
+
+Each issue contributes once, including WARNING. Rows without planned snapshots
+are informational and excluded. Actions group by translated action; anomalies use
+explicit code mappings. Unknown codes/actions are retained under their raw code.
+The charts show descending horizontal bars with count and percent in each label.
+The denominator is the collected issue count, not a count of unique objects/actions.
+An incomplete collection is marked in the chart title.
+
+All target payloads are saved before notifications. Only changed targets are refreshed.
+If EA does not immediately reconstruct a chart after AdviseElementChange, reopen the
+diagram to run ConstructChart from the saved data.
