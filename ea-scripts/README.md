@@ -174,3 +174,19 @@ Classification is independent of conformity.
 Node mocks validate the current nine-object fixture (4 technical, 3 business,
 2 outside), scope totals, foreign confirmation, tag creation and idempotence.
 These tests do not establish EA Scriptlet execution order or application stability.
+
+## One-time normal-script initialization when Scriptlet AddNew returns no tag
+
+The EA test confirmed that missing tag creation fails in the Scriptlet context,
+while normal-script tag creation worked for Actions and Issues.
+Install FrameworkBA_InitializeCheckDashboard.js as a NORMAL JavaScript script
+named FrameworkBA_InitializeCheckDashboard in ETNIC_FrameworkBA.
+Activate the CHECK dashboard and run it once. It prepares the real data for all nine
+charts using the same libraries, without GetChart/Redraw or refresh notifications.
+It creates missing memo tags and verifies persistence. Existing tags are not cleared.
+Then execute Refresh check result to test updates of existing tags in the Scriptlet.
+The included global conformity element name is now "Conformité", as confirmed by
+the user's EA log; the displayed title remains "Conformité des artefacts et diagrammes".
+Adapt names and GUIDs consistently in both entry scripts for another model.
+Normal initialization of all nine and subsequent Scriptlet updates still require
+EA validation. Opening-order limitations remain.

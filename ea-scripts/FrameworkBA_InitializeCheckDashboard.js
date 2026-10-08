@@ -2,14 +2,18 @@
 !INC ETNIC_FrameworkBA.FrameworkBA_CheckTableWriter
 !INC ETNIC_FrameworkBA.FrameworkBA_CheckChartWriter
 
-// Refresh check result: data preparation only; each ConstructChart renders itself.
+// Run once as a NORMAL JavaScript script with the CHECK dashboard active.
+// Creates missing chart tags with real data; existing tags are preserved or updated.
+// Configuration below matches the Exigences test model.
+var theDiagram = Repository.GetCurrentDiagram();
 function RefreshCheckResult()
 {
     function log(message) {
         Repository.WriteOutput("ETNIC_FrameworkBA", "[CHECK DASHBOARD] " + message, 0);
     }
     try {
-        log("Debut");
+        log("Initialisation normale | Debut");
+        if (!theDiagram) throw new Error("Activer le diagramme du tableau de bord CHECK.");
         var foreignDiagramGuids = ["{F3504F31-1749-4640-8C4B-2EFC294168B7}"];
         var result = FrameworkBA_CheckSnapshotCollector.collect(
             "{352E69B8-D782-43F7-8B62-27CFC437013D}",
@@ -56,7 +60,7 @@ function RefreshCheckResult()
             if (saved.changed) changed++;
         }
         // Table notification only: chart notifications remain excluded from this EA test.
-        if (tableUpdate.changed) Repository.AdviseElementChange(table.ElementID);
+        // No refresh notification during initialization.
         log("Fin | Graphiques préparés=" + targets.length + " | Modifiés=" + changed);
     } catch (error) {
         log("Erreur=" + error.message);
