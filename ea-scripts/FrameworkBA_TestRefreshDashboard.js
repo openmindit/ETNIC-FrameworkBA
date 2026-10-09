@@ -16,7 +16,7 @@ function FrameworkBA_TestRefreshDashboard()
         var diagram = Repository.GetTreeSelectedObject();
         if (!diagram || !diagram.DiagramID)
             throw new Error("Diagramme selectionne introuvable.");
-        FrameworkBA_CheckDashboard.refresh(diagram, { output: log, notifyCharts: true });
+        FrameworkBA_CheckDashboard.refresh(diagram, { output: log, notifyCharts: false });
         log("Donnees preparees; rafraichissement du diagramme");
         Repository.ReloadDiagram(diagram.DiagramID);
         log("Fin");
