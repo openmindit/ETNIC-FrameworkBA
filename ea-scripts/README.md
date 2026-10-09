@@ -280,3 +280,11 @@ CHECK ROOT still returns the complete runtime result for existing callers, but p
 summary counts only retained root-pass issues; analysisSummary preserves the whole runtime analysis counters. issuePartitions.local/global are indices into issues (no duplicated descriptors). LOCAL root-pass groups can concern descendants; they are not automatically root-owned. ANALYSIS details must select GLOBAL; ROOT_LOCAL must resolve ownership. Objects metrics are aggregate counters, not a business-only inventory.
 
 Update analysisStructureSynchronizer, rerun CHECK ROOT, then the updated normal FrameworkBA_TestInspectRootCheck script. Existing PACKAGE charts/collectors are unchanged. Live EA persistence must still verify ExpectedSize=PersistedSize and Identical=true. The compact format does not yet enable ROOT_LOCAL/ANALYSIS dashboards.
+
+## Direct ROOT content rules in framework constants
+
+ANALYSIS_ROOT_CONTENT in fbaConstants declares _Librairie and TXT Accueil (Logical, MDGDgm=Labnaf - Common::Free Text). Direct packages are permitted only when named exactly _Librairie or linked by TAG_SOURCE_ANALYSIS_ELEMENT_GUID to a known analysis definition. The underscore prefix alone does not exempt foreign packages. All direct root Elements are foreign. Other direct diagrams are foreign, including Dashboard/coverage charts. The library subtree is not inspected by this structural rule.
+
+Accueil is required and must match name, UML type and MDG identity; multiple valid Accueil diagrams and multiple libraries are reported. This change does not require a missing library or create/delete/move any objects. Each issue is LOCAL/ANALYSIS_ROOT, owned by the ROOT GUID, with separate affected-object fields for the offending package/element/diagram. The root rule and issues are included in compact persistence and full-analysis counters; they are not global inter-package anomalies.
+
+Deploy fbaConstants and analysisStructureSynchronizer together, reload the Add-In and run CHECK ROOT followed by the normal inspection script. ROOT_LOCAL and ANALYSIS dashboard rendering remains separate pending work.

@@ -18062,6 +18062,60 @@ return {
 	},
 
 		
+    _checkRootDirectContent: function(root, result)
+    {
+        var config = addin.fbaConstants.ANALYSIS_ROOT_CONTENT;
+        if (!config) throw new Error("Configuration ANALYSIS_ROOT_CONTENT absente.");
+        var definitions = this._getOperationDefinitions(), known = {};
+        function key(value) { return String(value || "").replace(/[{}]/g, "").toUpperCase(); }
+        for (var d = 0; d < definitions.length; d++) known[key(definitions[d].guid || definitions[d].prototypeGuid)] = true;
+        var self = this, foreign = 0, homeCount = 0, libraryCount = 0;
+        function issue(code, message, type, guid, name) {
+            foreign++;
+            self._registerCheckIssue(result, {
+                code: code, severity: "ERROR", action: "MANUAL_REVIEW",
+                scope: "LOCAL", scopeType: "ANALYSIS_ROOT", scopeGuid: root.PackageGUID,
+                objectType: "PACKAGE", objectGuid: root.PackageGUID, objectName: root.Name,
+                affectedObjectType: type, affectedObjectGuid: guid || "", affectedObjectName: name || "",
+                message: message
+            });
+        }
+        for (var p = 0; p < root.Packages.Count; p++) {
+            var pkg = root.Packages.GetAt(p);
+            if (String(pkg.Name) === config.libraryName) { libraryCount++; continue; }
+            var source = pkg.Element ? addin.repositoryService.getTaggedValue(
+                pkg.Element, addin.fbaConstants.TAG_SOURCE_ANALYSIS_ELEMENT_GUID) : "";
+            if (!source || !known[key(source)])
+                issue("ROOT_FOREIGN_PACKAGE", "Package non autorise directement dans le dossier d'analyse : " + pkg.Name,
+                    "PACKAGE", pkg.PackageGUID, pkg.Name);
+        }
+        if (libraryCount > 1)
+            issue("ROOT_LIBRARY_DUPLICATE", "Plusieurs packages " + config.libraryName + " dans le ROOT.", "PACKAGE", "", config.libraryName);
+        for (var e = 0; e < root.Elements.Count; e++) {
+            var element = root.Elements.GetAt(e);
+            issue("ROOT_FOREIGN_ELEMENT", "Element non autorise directement dans le dossier d'analyse : " + element.Name,
+                "ARTIFACT", element.ElementGUID, element.Name);
+        }
+        for (var i = 0; i < root.Diagrams.Count; i++) {
+            var diagram = root.Diagrams.GetAt(i);
+            var match = /(?:^|;)MDGDgm=([^;]*)/.exec(String(diagram.StyleEx || ""));
+            var mdg = match ? match[1] : String(diagram.MetaType || "");
+            if (String(diagram.Name) === config.homeDiagramName &&
+                String(diagram.Type) === config.homeDiagramType &&
+                mdg === config.homeDiagramMetaType) { homeCount++; continue; }
+            issue("ROOT_FOREIGN_DIAGRAM", "Diagramme non autorise directement dans le dossier d'analyse : " + diagram.Name,
+                "DIAGRAM", diagram.DiagramGUID, diagram.Name);
+        }
+        if (!homeCount)
+            issue("ROOT_HOME_DIAGRAM_MISSING", "Diagramme attendu absent : " + config.homeDiagramName
+                + " (" + config.homeDiagramMetaType + ").", "DIAGRAM", "", config.homeDiagramName);
+        if (homeCount > 1)
+            issue("ROOT_HOME_DIAGRAM_DUPLICATE", "Plusieurs diagrammes Accueil conformes dans le ROOT.", "DIAGRAM", "", config.homeDiagramName);
+        result.ruleResults.push(this._createCheckRuleResult(
+            "ROOT_DIRECT_CONTENT", "LOCAL", "ANALYSIS_ROOT", root.PackageGUID, "PACKAGE", "", root.PackageGUID, "",
+            config, { invalidItems: foreign, homeDiagrams: homeCount, libraries: libraryCount }, foreign === 0));
+    },
+
     _buildCompactRootCheckSnapshot: function(rootPackage, result, packageIssues, packageRules, packageGuids)
     {
         function key(value) { return String(value || "").replace(/[{}]/g, "").toUpperCase(); }
@@ -18191,6 +18245,8 @@ return {
 
 
 		// =========================================================
+        this._checkRootDirectContent(rootPackage, result);
+
 		// 1. PACKAGES
 		// =========================================================
 

@@ -14,6 +14,14 @@
 
 let constants = {
 
+    // Allowed direct content of an analysis ROOT; independent of analysis-element definitions.
+    ANALYSIS_ROOT_CONTENT: {
+        libraryName: "_Librairie",
+        homeDiagramName: "TXT Accueil",
+        homeDiagramType: "Logical",
+        homeDiagramMetaType: "Labnaf - Common::Free Text"
+    },
+
     // Optional fallback; root tag FrameworkBA_Check_PrototypeGuid takes priority.
     CHECK_DASHBOARD_PROTOTYPE_GUID: "",
 
