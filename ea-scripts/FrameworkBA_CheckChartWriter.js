@@ -291,6 +291,18 @@ var FrameworkBA_CheckChartWriter = (function () {
     // Technical takes precedence; metamodel membership is independent of conformity.
     function prepareClassification(result, scope, options) {
         options = options || {};
+        if (result.scope === "ANALYSIS" && result.packages) {
+            var sums = [0, 0, 0];
+            for (var ap = 0; ap < result.packages.length; ap++) {
+                var classification = prepareClassification(result.packages[ap], scope, options);
+                for (var ai = 0; ai < 3; ai++) sums[ai] += classification.items[ai].count;
+            }
+            var titles = { ALL: "Classification des objets", PACKAGE: "Classification des packages",
+                ARTIFACT: "Classification des artefacts", DIAGRAM: "Classification des diagrammes" };
+            return payload(result, "CLASSIFICATION", scope, titles[scope], [
+                { name: "Techniques", count: sums[0] }, { name: "Metier - metamodel", count: sums[1] },
+                { name: "Hors metamodel", count: sums[2] } ]);
+        }
         var confirmedForeign = options.foreignDiagramGuids || [];
         var allowed = { ALL: true, PACKAGE: true, ARTIFACT: true, DIAGRAM: true };
         if (!own(allowed, scope)) throw new Error("Perimetre inconnu: " + scope);

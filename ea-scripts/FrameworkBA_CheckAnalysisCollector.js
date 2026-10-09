@@ -89,7 +89,7 @@ var FrameworkBA_CheckAnalysisCollector = (function () {
         output("Bilan | Packages=" + packages.length + " | ERROR=" + counts.errors + " | WARNING=" + counts.warnings
             + " | ROOT_LOCAL=" + rootCounts.issues + " | GLOBAL=" + globalCounts.issues
             + " | Manquants=" + missing + " | Sans snapshot prevu=" + notPlanned + " | Synthese identique=" + identical);
-        return { rootGuid: rootGuid, checkedAt: views.checkedAt, packages: packages, snapshots: snapshots,
+        return { rootGuid: rootGuid, rootName: String(root.Name), checkedAt: views.checkedAt, packages: packages, snapshots: snapshots,
             issues: issues, detailIssues: views.global, rootLocalIssues: views.rootLocal,
             observedDateCount: dateCount, summary: counts, missing: missing, notPlanned: notPlanned, summaryMatchesRoot: identical };
     }

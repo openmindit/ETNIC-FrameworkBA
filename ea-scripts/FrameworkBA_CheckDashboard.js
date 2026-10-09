@@ -1,5 +1,5 @@
 /**
- * Common PACKAGE CHECK dashboard. Configuration belongs to diagram's package.
+ * Common PACKAGE and ANALYSIS CHECK dashboard. Configuration belongs to diagram's package.
  * No chart rendering, tag creation or diagram reload in this library.
  */
 var FrameworkBA_CheckDashboard = (function () {
@@ -40,15 +40,59 @@ var FrameworkBA_CheckDashboard = (function () {
             withoutSnapshot: guidList(element, "FrameworkBA_Check_DiagramGuidsWithoutSnapshot"),
             foreignDiagrams: guidList(element, "FrameworkBA_Check_ForeignDiagramGuids")
         };
-        if (config.scope !== "PACKAGE") throw new Error("Perimetre non implemente: " + config.scope);
+        if (config.scope !== "PACKAGE" && config.scope !== "ANALYSIS") throw new Error("Perimetre non implemente: " + config.scope);
+        if (config.scope === "ANALYSIS" && String(config.targetGuid).replace(/[{}]/g, "").toUpperCase()
+            !== String(config.rootGuid).replace(/[{}]/g, "").toUpperCase())
+            throw new Error("La cible ANALYSIS doit etre la racine.");
         if (config.version !== "1") throw new Error("Version prototype non supportee: " + config.version);
         if (!repository.GetPackageByGuid(config.targetGuid) || !repository.GetPackageByGuid(config.rootGuid))
             throw new Error("Package cible ou racine introuvable.");
         return config;
     }
+
+    function analysisView(collected) {
+        if (collected.missing > 0 || !collected.summaryMatchesRoot)
+            throw new Error("Synthese Analyse incomplete ou differente du CHECK ROOT; aucune ecriture.");
+        var metrics = { artifacts: { found: 0, compliant: 0, nonCompliant: 0, foreign: 0 },
+            diagrams: { found: 0, compliant: 0, nonCompliant: 0, foreign: 0 } };
+        var s = { referenced: 0, found: 0, expected: 0, missing: collected.missing,
+            notPlanned: collected.notPlanned, errors: collected.summary.errors, warnings: collected.summary.warnings };
+        for (var p = 0; p < collected.packages.length; p++) {
+            var part = collected.packages[p];
+            s.referenced += part.summary.referenced;
+            s.found += part.summary.found;
+            s.expected += part.summary.expected;
+            for (var type in metrics) if (Object.prototype.hasOwnProperty.call(metrics, type)) {
+                if (!part.metrics[type]) throw new Error("Metriques absentes: " + type + " | Package=" + part.packageGuid);
+                for (var field in metrics[type]) if (Object.prototype.hasOwnProperty.call(metrics[type], field)) {
+                    var value = part.metrics[type][field];
+                    if (typeof value !== "number" || !isFinite(value) || value < 0 || Math.floor(value) !== value)
+                        throw new Error("Metrique invalide: " + type + "." + field);
+                    metrics[type][field] += value;
+                }
+            }
+        }
+        function normalize(issue) {
+            if (issue.rawIssue) return issue;
+            return { objectGuid: issue.objectGuid || issue.diagramGuid || "",
+                objectType: issue.objectType || "", objectName: issue.objectName || issue.affectedObjectName || issue.uniquenessName || "",
+                code: issue.code || issue.rule || "", severity: issue.severity || "",
+                message: issue.message || issue.description || issue.code || "",
+                action: issue.action || "", rawIssue: issue };
+        }
+        var issues = [], detail = [];
+        for (var i = 0; i < collected.issues.length; i++) issues.push(normalize(collected.issues[i]));
+        for (var j = 0; j < collected.detailIssues.length; j++) detail.push(normalize(collected.detailIssues[j]));
+        return { packageGuid: collected.rootGuid, checkedAt: collected.checkedAt, scope: "ANALYSIS",
+            title: "Analyse - " + collected.rootName, packages: collected.packages,
+            snapshots: collected.snapshots, metrics: metrics, summary: s, issues: issues,
+            detailIssues: detail, globalCount: detail.length,
+            objectsWithoutSnapshot: [] };
+    }
+
     function summary(result, writer) {
         var s = result.summary, c = writer.conformity(result.metrics, "ALL");
-        var packageName = "";
+        var packageName = result.title || "";
         for (var i = 0; i < result.snapshots.length; i++) {
             var snap = result.snapshots[i];
             if (snap.scope === "PACKAGE" && String(snap.object.guid).replace(/[{}]/g, "").toUpperCase() === String(result.packageGuid).replace(/[{}]/g, "").toUpperCase()) {
@@ -60,8 +104,8 @@ var FrameworkBA_CheckDashboard = (function () {
         return [
             ["_Summary_Title", "SYNTHÈSE CHECK — " + packageName],
             ["_Summary_Check_Date", "Dernier CHECK : " + result.checkedAt],
-            ["_Summary_Error_Count", String(s.errors)],
-            ["_Summary_Warning_Count", String(s.warnings)],
+            ["_Summary_Error_Count", String(s.errors) + (result.scope === "ANALYSIS" ? " • dont globales : " + FrameworkBA_CheckRootViews.counts(result.detailIssues).errors : "")],
+            ["_Summary_Warning_Count", String(s.warnings) + (result.scope === "ANALYSIS" ? " • dont globaux : " + FrameworkBA_CheckRootViews.counts(result.detailIssues).warnings : "")],
             ["_Summary_Object_Count", String(s.referenced)],
             ["_Summary_Snapshot_Coverage", s.found + "/" + s.expected],
             ["_Summary_Snapshot_NotPlanned_Count", String(s.notPlanned)],
@@ -77,7 +121,7 @@ var FrameworkBA_CheckDashboard = (function () {
         var log = options.output || function (m) { repo.WriteOutput("ETNIC_FrameworkBA", "[CHECK DASHBOARD] " + m, 0); };
         var config = readConfiguration(diagram, repo);
         log("Debut | Cible=" + config.targetGuid + " | Perimetre=" + config.scope);
-        var result = FrameworkBA_CheckSnapshotCollector.collect(config.targetGuid, config.rootGuid, {
+        var result = config.scope === "ANALYSIS" ? analysisView(FrameworkBA_CheckAnalysisCollector.collect(config.rootGuid, { repository: repo, output: log })) : FrameworkBA_CheckSnapshotCollector.collect(config.targetGuid, config.rootGuid, {
             repository: repo, diagramGuidsWithoutSnapshot: config.withoutSnapshot,
             output: function (m) { repo.WriteOutput("ETNIC_FrameworkBA", "[CHECK COLLECT] " + m, 0); }
         });
@@ -100,8 +144,24 @@ var FrameworkBA_CheckDashboard = (function () {
         for (var k = 0; k < result.snapshots.length; k++)
             if (result.snapshots[k].scope === "PACKAGE" && String(result.snapshots[k].object.guid).replace(/[{}]/g,"").toUpperCase() === String(result.packageGuid).replace(/[{}]/g,"").toUpperCase())
                 targetSnapshot = result.snapshots[k];
+        if (config.scope === "ANALYSIS") {
+            var artifactTotal = 0, diagramTotal = 0;
+            for (var ap = 0; ap < result.packages.length; ap++) {
+                for (var ps = 0; ps < result.packages[ap].snapshots.length; ps++) {
+                    var packageSnap = result.packages[ap].snapshots[ps];
+                    if (packageSnap.scope === "PACKAGE") {
+                        artifactTotal += packageSnap.content.artifacts.length;
+                        diagramTotal += packageSnap.content.diagrams.length;
+                    }
+                }
+            }
+            texts.push(["_Summary_Scope", "Analyse : " + result.packages.length + " packages controles • "
+                + artifactTotal + " artefacts • " + diagramTotal + " diagrammes • Detail : anomalies globales uniquement. "
+                + "Conformite et classification : contenu des packages controles."]);
+        } else {
         if (!targetSnapshot || !targetSnapshot.content) throw new Error("Contenu du snapshot cible absent.");
         texts.push(["_Summary_Scope", "Périmètre : 1 package • " + targetSnapshot.content.artifacts.length + " artefacts • " + targetSnapshot.content.diagrams.length + " diagrammes"]);
+        }
         function find(name) { return FrameworkBA_CheckTableWriter.findOnDiagram(diagram, name, repo); }
         var table = find("_Detail_Table"), charts = [], textTargets = [];
         for (var i = 0; i < definitions.length; i++) {
@@ -118,7 +178,7 @@ var FrameworkBA_CheckDashboard = (function () {
             textTargets.push(text);
         }
         // All payloads and targets resolved before the first write.
-        var tableUpdate = FrameworkBA_CheckTableWriter.write(table.ElementGUID, result, { repository: repo, refresh: false, output: log });
+        var tableUpdate = FrameworkBA_CheckTableWriter.write(table.ElementGUID, config.scope === "ANALYSIS" ? { issues: result.detailIssues, summary: { missing: 0 }, emptyMessage: "Aucune anomalie globale interpackages." } : result, { repository: repo, refresh: false, output: log });
         var chartsChanged = 0, textsChanged = 0;
         for (var j = 0; j < charts.length; j++)
             if (writer.saveData(charts[j].ElementGUID, definitions[j][1], { repository: repo, refresh: false, output: log }).changed) chartsChanged++;
@@ -135,5 +195,5 @@ var FrameworkBA_CheckDashboard = (function () {
         log("Fin | Graphiques prepares=" + charts.length + " | Graphiques modifies=" + chartsChanged + " | Textes modifies=" + textsChanged);
         return { result: result, chartsChanged: chartsChanged, textsChanged: textsChanged };
     }
-    return { readConfiguration: readConfiguration, buildSummary: summary, refresh: refresh };
+    return { analysisView: analysisView, readConfiguration: readConfiguration, buildSummary: summary, refresh: refresh };
 })();

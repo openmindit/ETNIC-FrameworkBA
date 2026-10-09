@@ -102,7 +102,7 @@ var FrameworkBA_CheckTableWriter = (function () {
             rows.push(["Collecte", "", "—", result.summary.missing
                 + " snapshot(s) attendu(s) manquant(s).", "Consulter le journal CHECK COLLECT"]);
         if (rows.length === 1)
-            rows.push(["Collecte", "", "—", "Aucune anomalie détaillée collectée.", ""]);
+            rows.push(["Collecte", "", "—", result.emptyMessage || "Aucune anomalie détaillée collectée.", ""]);
         return rows;
     }
     function buildXml(rows) {
