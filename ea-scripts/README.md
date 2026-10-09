@@ -264,3 +264,11 @@ Mock validation: native factory copy/reuse tests and initialized-package selecti
 ## Normal test destination and refresh correction
 
 The Scripting factory/driver now use the library destination and ordinary hyphen described above. The existing Add-In module remains unchanged pending validation of this normal-script test. Update Collector, TableWriter, ChartWriter, Dashboard and Scripting Factory libraries before running the updated normal test driver. Select the prototype _Check_results package. Mock tests verify legacy-instance migration without cloning again and data preparation before one reload/open; native EA rendering remains to validate.
+
+## ROOT/ANALYSIS persistence diagnostic before dashboard extension
+
+Run FrameworkBA_TestInspectRootCheck.js as a normal script in ETNIC_FrameworkBA after selecting the analysis ROOT and executing CHECK ROOT. It only reads ETNIC_Check_Result and logs its issues, root/global rules and persisted summary/metrics. No cloning, writes, chart rendering or refresh occurs.
+
+The ROOT snapshot currently aggregates local package issues and uniqueness issues. Global duplicate issues carry scope=GLOBAL and objectGuids; one issue is stored in root.issues and referenced on affected root.objects entries. Do not sum root.issues together with these object issue lists. Missing issue.scope is reported UNSPECIFIED, never guessed to be root-local. The test separately reports direct root ownership by GUID; absence of such issues does not establish that all root-local validation rules exist.
+
+The agreed future ANALYSIS dashboard uses full-analysis figures but a global-only detail table. ROOT_LOCAL uses only root-owned local results. These dashboard scopes are not enabled by this diagnostic. Runtime output is needed to confirm the actual persisted structure and any missing root-local sources before implementing aggregation.
