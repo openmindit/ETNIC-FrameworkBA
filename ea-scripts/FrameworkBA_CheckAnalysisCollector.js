@@ -52,12 +52,15 @@ var FrameworkBA_CheckAnalysisCollector = (function () {
         }
         for (var r = 0; r < snapshot.issues.length; r++) add(snapshot.issues[r], rootGuid);
         var collectPackage = options.collectPackage || FrameworkBA_CheckSnapshotCollector.collect;
+        var index = null;
+        if (!options.collectPackage)
+            index = FrameworkBA_CheckSnapshotCollector.buildIndex(rootGuid, { repository: repo, output: output });
         var packageSeen = {};
         for (var p = 0; p < views.packageGuids.length; p++) {
             var guid = views.packageGuids[p], packageKey = key(guid);
             if (!packageKey || packageSeen[packageKey]) throw new Error("Reference package dupliquee ou vide.");
             packageSeen[packageKey] = true;
-            var result = collectPackage(guid, rootGuid, { repository: repo, output: function () {} });
+            var result = collectPackage(guid, rootGuid, { repository: repo, index: index, output: function () {} });
             // Each package CHECK receives its own timestamp during the ROOT run.
             observeDate(result.checkedAt, guid);
             packages.push(result);

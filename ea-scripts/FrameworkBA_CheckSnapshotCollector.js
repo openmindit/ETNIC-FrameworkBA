@@ -12,6 +12,46 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
         return Object.prototype.toString.call(value) === "[object Array]";
     }
 
+
+    // Execution-local index: one COM traversal and one read per carrier.
+    function buildIndex(rootGuid, options) {
+        options = options || {};
+        var repo = options.repository || Repository;
+        var root = repo.GetPackageByGuid(rootGuid);
+        if (!root) throw new Error("Racine introuvable pour indexation.");
+        var tagName = options.tagName || "ETNIC_Check_Result";
+        var output = options.output || function () {};
+        var index = { rootGuid: rootGuid, tagName: tagName, entries: [], carriers: {},
+            packages: 0, reads: 0 };
+        function read(element) {
+            var id = guidKey(element.ElementGUID);
+            if (index.carriers[id]) return;
+            index.carriers[id] = true;
+            index.reads++;
+            element.TaggedValues.Refresh();
+            for (var i = 0; i < element.TaggedValues.Count; i++) {
+                var tag = element.TaggedValues.GetAt(i);
+                if (String(tag.Name) !== tagName) continue;
+                var raw = String(tag.Value || "");
+                if (raw === "<memo>" || raw === "") raw = String(tag.Notes || "");
+                if (/^\s*$/.test(raw)) continue;
+                try { index.entries.push({ snapshot: JSON.parse(raw), carrierName: String(element.Name) }); }
+                catch (error) { throw new Error("JSON CHECK invalide sur " + element.Name + ": " + error.message); }
+            }
+        }
+        function visit(pkg) {
+            index.packages++;
+            output("Indexation | Package=" + pkg.Name + " | Packages parcourus=" + index.packages);
+            read(pkg.Element);
+            for (var e = 0; e < pkg.Elements.Count; e++) read(pkg.Elements.GetAt(e));
+            for (var p = 0; p < pkg.Packages.Count; p++) visit(pkg.Packages.GetAt(p));
+        }
+        visit(root);
+        output("Index pret | Packages parcourus=" + index.packages + " | Supports lus=" + index.reads
+            + " | Snapshots=" + index.entries.length);
+        return index;
+    }
+
     function collect(packageGuid, rootGuid, options) {
         options = options || {};
         var repository = options.repository || Repository;
@@ -131,7 +171,20 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
         if (!insideRoot)
             throw new Error("Le package cible ne se trouve pas dans la racine fournie.");
 
-        var packageSnapshot = readSnapshot(target.Element);
+        var index = options.index;
+        if (index && (guidKey(index.rootGuid) !== guidKey(rootGuid) || index.tagName !== tagName))
+            throw new Error("Index CHECK d'une autre racine ou d'un autre tag.");
+        var packageSnapshot = null;
+        if (index) {
+            for (var ix = 0; ix < index.entries.length; ix++) {
+                var indexed = index.entries[ix].snapshot;
+                if (indexed && indexed.scope === "PACKAGE" && indexed.object
+                    && guidKey(indexed.object.guid) === guidKey(packageGuid)) {
+                    if (packageSnapshot) throw new Error("Snapshot PACKAGE duplique: " + packageGuid);
+                    packageSnapshot = indexed;
+                }
+            }
+        } else packageSnapshot = readSnapshot(target.Element);
         if (!packageSnapshot || !packageSnapshot.object || !packageSnapshot.content
             || guidKey(packageSnapshot.object.guid) !== guidKey(packageGuid))
             throw new Error("Snapshot PACKAGE absent, incoherent ou sans content.");
@@ -162,7 +215,10 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
         output("Package=" + target.Name + " | Date=" + packageSnapshot.checkedAt
             + " | Artefacts=" + artifacts.length + " | Diagrammes=" + diagrams.length);
         accept(packageSnapshot, target.Element.Name);
-        visitPackage(root);
+        if (index) {
+            for (var ie = 0; ie < index.entries.length; ie++)
+                accept(index.entries[ie].snapshot, index.entries[ie].carrierName);
+        } else visitPackage(root);
 
         // Only explicit declarations identify diagrams without a planned snapshot.
         // Aggregate foreign counts cannot identify individual GUIDs.
@@ -243,5 +299,5 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
             metrics: metrics, objectsWithoutSnapshot: objectsWithoutSnapshot };
     }
 
-    return { collect: collect };
+    return { collect: collect, buildIndex: buildIndex };
 })();
