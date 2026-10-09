@@ -256,6 +256,10 @@ var FrameworkBA_CheckChartWriter = (function () {
         chart.Title = String(data.title || element.Name) + " (" + data.total + ")"
             + (data.missingSnapshots > 0 ? " — Collecte incomplète" : "");
         var series = chart.CreateSeries("Nombre");
+        if (!series) {
+            output("Affichage differe | Graphique=" + element.Name + " | Serie indisponible dans ce contexte EA");
+            return null;
+        }
         for (var i = 0; i < data.items.length; i++)
             series.AddDataPoint3(label(data.items[i].name, data.items[i].count, data.total),
                 data.items[i].count);

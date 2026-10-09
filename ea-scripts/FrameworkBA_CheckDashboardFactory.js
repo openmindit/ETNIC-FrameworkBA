@@ -114,21 +114,45 @@ var FrameworkBA_CheckDashboardFactory = (function () {
         }
         if (!belongs) throw new Error("Cible hors du dossier d'analyse.");
         var template = inspect(prototype, repo);
-        // Locate all existing linked dashboards before creating anything.
-        var container = null, existing = [];
+        // Reuse the framework technical library shown in the analysis root.
+        var library = null, container = null, oldContainer = null, existing = [];
         root.Packages.Refresh();
         for (var p = 0; p < root.Packages.Count; p++) {
             var candidate = root.Packages.GetAt(p);
-            if (String(candidate.Name) !== "_Check_results") continue;
-            if (container) throw new Error("Plusieurs dossiers _Check_results dans la racine.");
-            container = candidate;
+            if (String(candidate.Name) === "_Librairie" || String(candidate.Name) === "_librairies") {
+                if (library) throw new Error("Plusieurs dossiers de librairies; cible ambigue.");
+                library = candidate;
+            }
+            if (String(candidate.Name) === "_Check_results") {
+                if (oldContainer) throw new Error("Plusieurs anciens dossiers _Check_results.");
+                oldContainer = candidate;
+            }
         }
-        if (container) {
-            container.Packages.Refresh();
-            for (var x = 0; x < container.Packages.Count; x++) {
-                var instance = container.Packages.GetAt(x);
+        if (!library) throw new Error("Dossier technique _Librairie/_librairies absent de la racine.");
+        library.Packages.Refresh();
+        for (var lc = 0; lc < library.Packages.Count; lc++) {
+            var bucket = library.Packages.GetAt(lc);
+            if (String(bucket.Name) !== "_Check_results" && String(bucket.Name) !== "check_results") continue;
+            if (container) throw new Error("Plusieurs dossiers check_results dans les librairies.");
+            container = bucket;
+        }
+        function linkedInstances(bucket) {
+            if (!bucket) return;
+            bucket.Packages.Refresh();
+            for (var x = 0; x < bucket.Packages.Count; x++) {
+                var instance = bucket.Packages.GetAt(x);
                 if (key(read(instance.Element, "FrameworkBA_Check_TargetGuid")) === key(targetGuid)) existing.push(instance);
             }
+        }
+        linkedInstances(container);
+        linkedInstances(oldContainer);
+        function destination() {
+            if (!container) {
+                container = library.Packages.AddNew("_Check_results", "");
+                if (!container || !container.Update()) throw new Error("Creation du dossier check_results impossible.");
+                library.Packages.Refresh();
+            }
+            return container;
         }
         if (existing.length > 1) throw new Error("Plusieurs dashboards pour la meme cible.");
         if (existing.length === 1) {
@@ -138,8 +162,18 @@ var FrameworkBA_CheckDashboardFactory = (function () {
                 || read(existing[0].Element, "FrameworkBA_Check_Scope") !== "PACKAGE"
                 || read(existing[0].Element, "FrameworkBA_Check_TemplateVersion") !== "1")
                 throw new Error("Dashboard existant incomplet ou incoherent; COMPLETE/REPAIR requis.");
-            log("Existant | Dossier=" + existing[0].Name + " | Modifie=false");
-            return { packageGuid: existing[0].PackageGUID, diagramGuid: present.diagram.DiagramGUID, changed: false };
+            var destinationPackage = destination();
+            var migrated = existing[0].ParentID !== destinationPackage.PackageID
+                || String(existing[0].Name) !== "_CHECK - " + target.Name;
+            if (migrated) {
+                existing[0].ParentID = destinationPackage.PackageID;
+                existing[0].Name = "_CHECK - " + target.Name;
+                if (!existing[0].Update()) throw new Error("Deplacement/renommage de l'instance impossible.");
+                destinationPackage.Packages.Refresh();
+                if (oldContainer) oldContainer.Packages.Refresh();
+            }
+            log("Existant | Dossier=" + existing[0].Name + " | Modifie=" + migrated);
+            return { packageGuid: existing[0].PackageGUID, diagramGuid: present.diagram.DiagramGUID, changed: migrated };
         }
         log("Prototype valide | Graphiques=9 | Textes=12 | Cible=" + target.Name);
         var copy = null;
@@ -155,7 +189,7 @@ var FrameworkBA_CheckDashboardFactory = (function () {
                 for (var sd = 0; sd < template.inventory.diagrams.length; sd++)
                     if (key(copied.inventory.diagrams[dg].DiagramGUID) === key(template.inventory.diagrams[sd].DiagramGUID))
                         throw new Error("Le clone partage un diagramme du prototype.");
-            copy.Name = "_CHECK — " + target.Name;
+            copy.Name = "_CHECK - " + target.Name;
             if (!copy.Update()) throw new Error("Renommage du clone impossible.");
             set(copy.Element, "FrameworkBA_Check_TargetGuid", targetGuid, false);
             set(copy.Element, "FrameworkBA_Check_RootGuid", rootGuid, false);
@@ -176,11 +210,7 @@ var FrameworkBA_CheckDashboardFactory = (function () {
                 e.Notes = summaryNames[tx] === "_Summary_Title" ? "SYNTHÈSE CHECK — " + target.Name : "—";
                 if (!e.Update()) throw new Error("Reinitialisation texte impossible: " + e.Name);
             }
-            if (!container) {
-                container = root.Packages.AddNew("_Check_results", "");
-                if (!container || !container.Update()) throw new Error("Creation _Check_results impossible.");
-                root.Packages.Refresh();
-            }
+            destination();
             copy.ParentID = container.PackageID;
             if (!copy.Update()) throw new Error("Deplacement du clone impossible.");
             set(copy.Element, "FrameworkBA_Check_State", "READY", false);
