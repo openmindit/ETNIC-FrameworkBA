@@ -190,3 +190,31 @@ the user's EA log; the displayed title remains "Conformité des artefacts et dia
 Adapt names and GUIDs consistently in both entry scripts for another model.
 Normal initialization of all nine and subsequent Scriptlet updates still require
 EA validation. Opening-order limitations remain.
+
+## Prototype package dashboard (current procedure)
+
+Install library `FrameworkBA_CheckDashboard.js` in EA group `ETNIC_FrameworkBA`, alongside Collector, TableWriter and ChartWriter. Replace the code of `_Check_Refresh` with `FrameworkBA_CheckDashboard.scriptlet.js`.
+
+The whole prototype package is copied. The diagram belongs to its dashboard package. On that package's Element configure:
+- `FrameworkBA_Check_TargetGuid`: checked analysis package GUID.
+- `FrameworkBA_Check_RootGuid`: analysis folder GUID used for snapshot lookup.
+- `FrameworkBA_Check_Scope`: `PACKAGE` (ROOT is explicitly unsupported).
+- `FrameworkBA_Check_TemplateVersion`: `1`.
+- Optional `FrameworkBA_Check_DiagramGuidsWithoutSnapshot`: JSON array of diagrams for which individual snapshots are not planned.
+- Optional `FrameworkBA_Check_ForeignDiagramGuids`: JSON array of diagrams explicitly confirmed outside the metamodel.
+
+The two lists have different meanings. For the Exigences test, both contain `["{F3504F31-1749-4640-8C4B-2EFC294168B7}"]`. Empty/absent lists mean no declarations. Lists can be memo tags. Prototype target/root remain empty; set them in each instance.
+
+Elements referenced on the diagram must have these unique technical names:
+`_Detail_Table`, `_Chart_Conformity_All`, `_Chart_Conformity_Artifacts`, `_Chart_Conformity_Diagrams`, `_Chart_Actions`, `_Chart_Issues`, `_Chart_Classification_All`, `_Chart_Classification_Packages`, `_Chart_Classification_Artifacts`, `_Chart_Classification_Diagrams`.
+
+Dynamic Text/Note elements:
+`_Summary_Title`, `_Summary_Check_Date`, `_Summary_Error_Count`, `_Summary_Warning_Count`, `_Summary_Object_Count`, `_Summary_Snapshot_Coverage`, `_Summary_Snapshot_NotPlanned_Count`, `_Summary_Conformity_Title`, `_Summary_Compliant_Value`, `_Summary_NonCompliant_Value`, `_Summary_Foreign_Value`, `_Summary_Scope`.
+
+Fixed labels retain their existing content and style. Text updates replace Notes with plain content; embedded HTML formatting is not preserved. Diagram font, positioning and colors are not modified.
+
+All nine charts require an existing `FrameworkBA_CheckChart_Data` tag in the prototype. The table requires its existing data/dataFormat tags. All payloads and targets are resolved before writes; writes are sequential, not transactional. Failed persistence can leave a partial update; rerun after correction. Tag creation remains backlog issue #7.
+
+The Scriptlet prepares data and text only. Each chart keeps its ConstructChart wrapper calling `FrameworkBA_CheckChartWriter.renderStored(guid)`. No chart rendering, chart notifications, automatic diagram reopening or reload occurs in the Scriptlet. If EA already rendered before preparation, reopen the diagram once to show the new values.
+
+Validation: JavaScript syntax and mocked PACKAGE configuration/summary calculations; live EA execution still needs user verification. Legacy scripts below/above containing Exigences GUIDs are diagnostic fixtures, not the common runtime.
