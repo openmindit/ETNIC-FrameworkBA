@@ -18062,6 +18062,44 @@ return {
 	},
 
 		
+    _buildCompactRootCheckSnapshot: function(rootPackage, result, packageIssues, packageRules, packageGuids)
+    {
+        function key(value) { return String(value || "").replace(/[{}]/g, "").toUpperCase(); }
+        function containsIdentity(list, value) {
+            for (var i = 0; i < list.length; i++) if (list[i] === value) return true;
+            return false;
+        }
+        var issues = [], rules = [], globalIssues = [], localIssues = [];
+        for (var i = 0; i < result.issues.length; i++) {
+            var issue = result.issues[i];
+            if (containsIdentity(packageIssues, issue)) continue;
+            issues.push(issue);
+            if (issue.scope === "GLOBAL") globalIssues.push(issues.length - 1);
+            else localIssues.push(issues.length - 1);
+        }
+        for (var r = 0; r < result.ruleResults.length; r++)
+            if (!containsIdentity(packageRules, result.ruleResults[r])) rules.push(result.ruleResults[r]);
+        var summary = { errors: 0, warnings: 0, init: 0, complete: 0, repair: 0,
+            manualComplete: 0, manualRemove: 0, manualMove: 0,
+            makeTechnical: 0, makeBusiness: 0, manualReview: 0 };
+        for (var n = 0; n < issues.length; n++) this._incrementCheckSummary(summary, issues[n]);
+        var date = result.checkedAt;
+        if (typeof date !== "string" || !date.replace(/\s/g, ""))
+            date = addin.utils.formatFrenchDateTime(new Date());
+        if (typeof date !== "string" || !date.replace(/\s/g, ""))
+            throw new Error("Date CHECK ROOT indisponible.");
+        return {
+            schemaVersion: 2, storage: "DISTRIBUTED", scope: "ROOT",
+            success: result.success, checkedAt: date,
+            rootGuid: rootPackage.PackageGUID, rootName: rootPackage.Name,
+            issues: issues, ruleResults: rules, summary: summary,
+            analysisSummary: result.summary,
+            metrics: result.metrics,
+            content: { packages: packageGuids },
+            issuePartitions: { local: localIssues, global: globalIssues }
+        };
+    },
+
 	checkAnalysis: function(rootPackage)
 	{
 		var result = {
@@ -18127,6 +18165,9 @@ return {
 
 
 		// =========================================================
+        // Track provenance by identity; package-local results are already persisted individually.
+        var packageIssues = [], packageRules = [], packageGuids = [];
+
 		// 0. CONTEXTE
 		// =========================================================
 
@@ -18261,6 +18302,7 @@ return {
 				);
 
 
+            packageGuids.push(currentPackage.PackageGUID);
 			result.summary.packagesChecked++;
 
 
@@ -18308,6 +18350,7 @@ return {
 					j++
 				)
 				{
+                    packageIssues.push(packageResult.issues[j]);
 					result.issues.push(
 						packageResult.issues[j]
 					);
@@ -18326,6 +18369,7 @@ return {
 					r++
 				)
 				{
+                    packageRules.push(packageResult.ruleResults[r]);
 					result.ruleResults.push(
 						packageResult.ruleResults[r]
 					);
@@ -18633,11 +18677,10 @@ return {
 		// 4. PERSISTENCE DU SNAPSHOT CHECK
 		// =========================================================
 
-		var snapshotPersisted =
-			this._persistCheckSnapshot(
-				rootPackage,
-				result
-			);
+        var compactSnapshot = this._buildCompactRootCheckSnapshot(
+            rootPackage, result, packageIssues, packageRules, packageGuids);
+        result.checkedAt = compactSnapshot.checkedAt;
+        var snapshotPersisted = this._persistCheckSnapshot(rootPackage, compactSnapshot);
 
 		if (!snapshotPersisted)
 		{

@@ -45,6 +45,8 @@ function FrameworkBA_TestInspectRootCheck()
             if (rule.scope === "GLOBAL" || key(rule.objectGuid) === key(root.PackageGUID) || key(rule.scopeGuid) === key(root.PackageGUID))
                 log("Regle ROOT/GLOBAL=" + JSON.stringify(rule));
         }
+        log("Stockage=" + String(snapshot.storage || "LEGACY") + " | Schema=" + String(snapshot.schemaVersion || 1) + " | Packages references=" + ((snapshot.content && snapshot.content.packages) ? snapshot.content.packages.length : 0));
+        log("Summary analyse=" + JSON.stringify(snapshot.analysisSummary || null));
         log("Summary persiste=" + JSON.stringify(snapshot.summary || {}));
         log("Metrics persistees=" + JSON.stringify(snapshot.metrics || {}));
         log("Bilan | Objets=" + objectCount + " | Issues=" + issues.length + " | GLOBAL=" + counts.GLOBAL

@@ -272,3 +272,11 @@ Run FrameworkBA_TestInspectRootCheck.js as a normal script in ETNIC_FrameworkBA 
 The ROOT snapshot currently aggregates local package issues and uniqueness issues. Global duplicate issues carry scope=GLOBAL and objectGuids; one issue is stored in root.issues and referenced on affected root.objects entries. Do not sum root.issues together with these object issue lists. Missing issue.scope is reported UNSPECIFIED, never guessed to be root-local. The test separately reports direct root ownership by GUID; absence of such issues does not establish that all root-local validation rules exist.
 
 The agreed future ANALYSIS dashboard uses full-analysis figures but a global-only detail table. ROOT_LOCAL uses only root-owned local results. These dashboard scopes are not enabled by this diagnostic. Runtime output is needed to confirm the actual persisted structure and any missing root-local sources before implementing aggregation.
+
+## Compact distributed ROOT CHECK persistence (schema 2)
+
+CHECK ROOT still returns the complete runtime result for existing callers, but persists a schemaVersion=2 / storage=DISTRIBUTED snapshot. Package-local issues and rules are excluded by their aggregation provenance (identity), not by guessing absent scope fields. It retains root-pass rules/issues, root date/success, package GUID references, analysisSummary and metrics. Detailed objects are no longer duplicated in ROOT storage.
+
+summary counts only retained root-pass issues; analysisSummary preserves the whole runtime analysis counters. issuePartitions.local/global are indices into issues (no duplicated descriptors). LOCAL root-pass groups can concern descendants; they are not automatically root-owned. ANALYSIS details must select GLOBAL; ROOT_LOCAL must resolve ownership. Objects metrics are aggregate counters, not a business-only inventory.
+
+Update analysisStructureSynchronizer, rerun CHECK ROOT, then the updated normal FrameworkBA_TestInspectRootCheck script. Existing PACKAGE charts/collectors are unchanged. Live EA persistence must still verify ExpectedSize=PersistedSize and Identical=true. The compact format does not yet enable ROOT_LOCAL/ANALYSIS dashboards.
