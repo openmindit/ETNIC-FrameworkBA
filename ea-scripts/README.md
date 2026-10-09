@@ -230,3 +230,19 @@ Deploy the updated Add-In `analysisStructureSynchronizer`, Collector and ChartWr
 Exigences fixture: expected snapshots remain 8/8, notPlanned=1; issues become 15 (all ERROR) because the previously omitted DIAGRAM_NOT_IN_METAMODEL issue is now preserved. MANUAL_REVIEW becomes 2. Conformity/classification object totals do not change.
 
 Validation: mocked collection tests cover automatic exclusion, issue preservation, classification, invalid declarations, empty authoritative declarations and genuinely missing snapshots. Native EA execution remains to verify after deployment.
+
+## Prototype cloning test before INIT integration
+
+Install `FrameworkBA_CheckDashboardFactory.js` as `FrameworkBA_CheckDashboardFactory` in the EA group ETNIC_FrameworkBA. Install the normal script `FrameworkBA_TestCreateCheckDashboard.js` in the same group. Select the prototype package named _Check_results (not a results instance), then execute the normal script. This diagnostic script targets the Exigences fixture; reusable factory.create accepts prototype, target and analysis-root GUIDs without fixed model identifiers.
+
+The factory uses EA Package.Clone(), checks fresh element/diagram GUIDs and rejects external diagram references. The package with _Check_Result_Diagram must directly own that diagram; all required dynamic elements must be placed on it. Child package and child-element contents are allowed and cloned. Each chart must already have its memo data tag in the prototype.
+
+The generated folder is analysisRoot/_Check_results/_CHECK — Exigences. The clone retains _Check_Result_Diagram and technical element names, fonts/layout/scripts, and receives target/root/scope/template tags. FrameworkBA_Check_PrototypeGuid identifies its prototype and FrameworkBA_Check_State marks PREPARING or READY. Fixed summary labels are preserved; dynamic texts and cached chart data are reset. Keep the common _Check_Refresh and ConstructChart wrappers in the prototype before cloning.
+
+The factory never opens a diagram, executes CHECK, renders a chart or installs EA scripts. After creation, open the copied diagram to run its common Scriptlet using persisted CHECK snapshots. Charts may render before that Scriptlet; cached JSON is initially empty, so reopen once after preparation if needed.
+
+A second call for the same target returns an existing validated READY instance without writes. A manually created dashboard without READY is reported as incomplete rather than silently adopted. Duplicate result containers or linked instances abort. Errors retain the incomplete clone (logged GUID); there is no destructive automatic rollback. Inspect that clone before retrying, especially if failure occurred before moving it from the prototype's parent.
+
+This step provides the creation library and normal test, not automatic INIT/COMPLETE/REPAIR wiring. Those operations will call the library after native cloning is validated and the prototype GUID has been registered in framework configuration. ROOT dashboard aggregation remains unsupported.
+
+Validation: `node ea-scripts/tests/CheckDashboardFactory.test.cjs` checks copy configuration, fresh identifiers, cache reset, unchanged source, existing-instance reuse and external-reference rejection using mocked EA objects.
