@@ -349,7 +349,7 @@ var FrameworkBA_CheckChartWriter = (function () {
                 throw new Error("Diagrammes sans snapshot: appartenance à confirmer.");
             for (var w = 0; w < without.length; w++) {
                 var obj = without[w];
-                var confirmed = false;
+                var confirmed = obj.outsideMetamodel === true;
                 for (var f = 0; f < confirmedForeign.length; f++)
                     if (key(confirmedForeign[f]) === key(obj.objectGuid)) confirmed = true;
                 if (!confirmed)

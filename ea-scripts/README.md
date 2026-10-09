@@ -218,3 +218,15 @@ All nine charts require an existing `FrameworkBA_CheckChart_Data` tag in the pro
 The Scriptlet prepares data and text only. Each chart keeps its ConstructChart wrapper calling `FrameworkBA_CheckChartWriter.renderStored(guid)`. No chart rendering, chart notifications, automatic diagram reopening or reload occurs in the Scriptlet. If EA already rendered before preparation, reopen the diagram once to show the new values.
 
 Validation: JavaScript syntax and mocked PACKAGE configuration/summary calculations; live EA execution still needs user verification. Legacy scripts below/above containing Exigences GUIDs are diagnostic fixtures, not the common runtime.
+
+## Automatic foreign-diagram declarations (supersedes manual lists)
+
+A new PACKAGE CHECK writes `content.diagramsWithoutSnapshot`: descriptors containing `guid`, `name`, `reason: "DIAGRAM_NOT_IN_METAMODEL"` and the object's CHECK `issues`. Foreign diagrams have no generated DGC in the current framework. No DGC is created by this change.
+
+The collector validates each descriptor against `content.diagrams`. When the field exists it is authoritative, even when empty; old manual exclusion lists are ignored. A received individual snapshot takes precedence to avoid duplicate issue counting. Otherwise the package-carried issues are included in the result, and classification trusts the explicit outside-metamodel declaration. An unrelated missing snapshot still remains missing.
+
+Deploy the updated Add-In `analysisStructureSynchronizer`, Collector and ChartWriter, then rerun CHECK on the analysis package before refreshing the dashboard. Older snapshots without this field still accept the temporary manual tags. After the new CHECK, these two optional dashboard tags may be removed or emptied.
+
+Exigences fixture: expected snapshots remain 8/8, notPlanned=1; issues become 15 (all ERROR) because the previously omitted DIAGRAM_NOT_IN_METAMODEL issue is now preserved. MANUAL_REVIEW becomes 2. Conformity/classification object totals do not change.
+
+Validation: mocked collection tests cover automatic exclusion, issue preservation, classification, invalid declarations, empty authoritative declarations and genuinely missing snapshots. Native EA execution remains to verify after deployment.

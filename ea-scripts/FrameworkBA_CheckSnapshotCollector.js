@@ -25,6 +25,7 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
         var snapshots = [];
         var diagnostics = [];
         var noSnapshot = {};
+        var packageDeclarations = {};
         var objectsWithoutSnapshot = [];
         var declarations = options.diagramGuidsWithoutSnapshot || [];
         if (!isArray(declarations))
@@ -143,6 +144,21 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
         expect(packageGuid, "PACKAGE");
         for (var a = 0; a < artifacts.length; a++) expect(artifacts[a], "ARTIFACT");
         for (var d = 0; d < diagrams.length; d++) expect(diagrams[d], "DIAGRAM");
+        var declared = packageSnapshot.content.diagramsWithoutSnapshot;
+        if (typeof declared !== "undefined") {
+            if (!isArray(declared)) throw new Error("content.diagramsWithoutSnapshot doit etre un tableau.");
+            // New snapshots are authoritative: ignore old manual lists.
+            noSnapshot = {};
+            for (var nd = 0; nd < declared.length; nd++) {
+                var entry = declared[nd], entryKey = entry && guidKey(entry.guid);
+                if (!entryKey || !expected[entryKey] || expected[entryKey].type !== "DIAGRAM"
+                    || packageDeclarations[entryKey] || entry.reason !== "DIAGRAM_NOT_IN_METAMODEL"
+                    || !isArray(entry.issues))
+                    throw new Error("Declaration diagramme sans snapshot invalide.");
+                noSnapshot[entryKey] = true;
+                packageDeclarations[entryKey] = entry;
+            }
+        }
         output("Package=" + target.Name + " | Date=" + packageSnapshot.checkedAt
             + " | Artefacts=" + artifacts.length + " | Diagrammes=" + diagrams.length);
         accept(packageSnapshot, target.Element.Name);
@@ -165,7 +181,17 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
                 if (diagram) {
                     summary.notPlanned++;
                     objectsWithoutSnapshot.push({ objectGuid: expected[key].guid,
-                        objectType: "DIAGRAM", objectName: String(diagram.Name) });
+                        objectType: "DIAGRAM", objectName: String(diagram.Name),
+                        outsideMetamodel: !!packageDeclarations[key] });
+                    var packageEntry = packageDeclarations[key];
+                    if (packageEntry) for (var pi = 0; pi < packageEntry.issues.length; pi++) {
+                        var localIssue = packageEntry.issues[pi] || {};
+                        var localCode = String(localIssue.code || localIssue.rule || "");
+                        issues.push({ objectGuid: expected[key].guid, objectName: String(packageEntry.name || diagram.Name),
+                            objectType: "DIAGRAM", severity: String(localIssue.severity || "").toUpperCase(),
+                            code: localCode, message: String(localIssue.message || localIssue.description || localCode),
+                            action: String(localIssue.action || ""), rawIssue: localIssue });
+                    }
                     output("Snapshot non prevu | Objet=" + diagram.Name
                         + " | Type=DIAGRAM | GUID=" + expected[key].guid);
                     continue;
@@ -181,6 +207,7 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
             }
         }
 
+        summary.issues = issues.length;
         var typeOrder = { ARTIFACT: 0, DIAGRAM: 1, PACKAGE: 2 };
         var severityOrder = { ERROR: 0, WARNING: 1 };
         function compareText(a, b) { return a < b ? -1 : (a > b ? 1 : 0); }

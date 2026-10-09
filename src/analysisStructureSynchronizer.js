@@ -12665,6 +12665,7 @@ return {
 		{
 			var artifactGuids = [];
 			var diagramGuids = [];
+			var diagramsWithoutSnapshot = [];
 			var checkedObjects = checkResult.objects || {};
 
 			for (var checkedGuid in checkedObjects)
@@ -12686,6 +12687,19 @@ return {
 				else if (checkedObject.objectType == "DIAGRAM")
 				{
 					diagramGuids.push(checkedObject.guid);
+                    var diagramIssues = checkedObject.issues || [];
+                    for (var foreignIssueIndex = 0; foreignIssueIndex < diagramIssues.length; foreignIssueIndex++) {
+                        if (diagramIssues[foreignIssueIndex].code !== "DIAGRAM_NOT_IN_METAMODEL") continue;
+                        // Foreign diagrams have no generated DGC. Preserve their CHECK issues
+                        // in the PACKAGE snapshot rather than requiring a diagram snapshot.
+                        diagramsWithoutSnapshot.push({
+                            guid: checkedObject.guid,
+                            name: checkedObject.name,
+                            reason: "DIAGRAM_NOT_IN_METAMODEL",
+                            issues: diagramIssues
+                        });
+                        break;
+                    }
 				}
 			}
 
@@ -12694,7 +12708,8 @@ return {
 
 			snapshot.content = {
 				artifacts: artifactGuids,
-				diagrams: diagramGuids
+				diagrams: diagramGuids,
+                diagramsWithoutSnapshot: diagramsWithoutSnapshot
 			};
 
 			snapshot.metrics =
