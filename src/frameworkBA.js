@@ -160,6 +160,49 @@ return {
     //      -> initializeAnalysisPackage(root, package)
     // ========================================================
 
+    _initializeCheckDashboards: function(context)
+    {
+        var root = context.analysisRoot;
+        var prototypeGuid = addin.repositoryService.getTaggedValue(root.Element, "FrameworkBA_Check_PrototypeGuid")
+            || addin.fbaConstants.CHECK_DASHBOARD_PROTOTYPE_GUID;
+        if (!prototypeGuid)
+        {
+            addin.logger.warning("CHECK INIT ignore | Prototype non configure | Root=" + root.Name);
+            return true;
+        }
+        if (!addin.checkDashboardFactory)
+        {
+            addin.logger.error("Module checkDashboardFactory absent de l'Add-In.");
+            return false;
+        }
+        var sync = addin.analysisStructureSynchronizer;
+        function ensurePackage(pkg)
+        {
+            // A cancelled INIT returns true too; do not create a dashboard for it.
+            if (sync._getAnalysisPackageInitializationState(pkg) !== "INITIALIZED") return true;
+            return addin.checkDashboardFactory.ensure(pkg, root);
+        }
+        if (context.targetType === addin.fbaConstants.CONTEXT_ANALYSIS_PACKAGE)
+            return ensurePackage(context.targetPackage);
+        var success = true;
+        function visit(pkg)
+        {
+            pkg.Packages.Refresh();
+            // Capture children before creating any technical result packages.
+            var children = [];
+            for (var i = 0; i < pkg.Packages.Count; i++) children.push(pkg.Packages.GetAt(i));
+            for (var j = 0; j < children.length; j++)
+            {
+                var child = children[j];
+                if (addin.utils.isTechnicalName(child.Name)) continue;
+                if (!ensurePackage(child)) success = false;
+                visit(child);
+            }
+        }
+        visit(root);
+        return success;
+    },
+
     initializeAnalysis: function()
     {
         var selectedPackage =
@@ -298,6 +341,9 @@ return {
             return false;
         }
 
+
+        if (result)
+            result = this._initializeCheckDashboards(context);
 
         // ----------------------------------------------------
         // REFRESH

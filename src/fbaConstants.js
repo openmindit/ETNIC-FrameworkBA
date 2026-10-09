@@ -14,6 +14,9 @@
 
 let constants = {
 
+    // Optional fallback; root tag FrameworkBA_Check_PrototypeGuid takes priority.
+    CHECK_DASHBOARD_PROTOTYPE_GUID: "",
+
     // ========================================================
     // FRAMEWORK
     // ========================================================

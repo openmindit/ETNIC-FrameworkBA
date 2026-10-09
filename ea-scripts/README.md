@@ -246,3 +246,17 @@ A second call for the same target returns an existing validated READY instance w
 This step provides the creation library and normal test, not automatic INIT/COMPLETE/REPAIR wiring. Those operations will call the library after native cloning is validated and the prototype GUID has been registered in framework configuration. ROOT dashboard aggregation remains unsupported.
 
 Validation: `node ea-scripts/tests/CheckDashboardFactory.test.cjs` checks copy configuration, fresh identifiers, cache reset, unchanged source, existing-instance reuse and external-reference rejection using mocked EA objects.
+
+## Add-In ownership of dashboard creation (current architecture)
+
+Dashboard creation now belongs to the Scripted Add-In module `src/checkDashboardFactory.js` (internal code/property `checkDashboardFactory`, using the same module registration mechanism as repositoryService and analysisStructureSynchronizer). Deploy it together with updated `src/frameworkBA.js` and `src/fbaConstants.js`. It has no dependency on the Scripting factory or TableWriter libraries.
+
+Set `FrameworkBA_Check_PrototypeGuid` on the analysis ROOT package Element to the GUID of the whole prototype _Check_results package. An optional CHECK_DASHBOARD_PROTOTYPE_GUID constant is the fallback. Without either configuration, dashboard creation logs a warning and existing INIT behavior continues.
+
+On successful INIT PACKAGE, create/reuse a linked dashboard if the package initialization state is INITIALIZED. This also handles INIT's already-initialized SKIP. Cancelled or incomplete initializations do not create dashboards. On successful INIT ROOT, visit initialized analysis packages recursively, excluding technical package subtrees. No ROOT dashboard is created because ROOT collection is not yet supported.
+
+The normal Scripting factory/test introduced earlier is a diagnostic fixture; use the Add-In module for production ownership. The common Scriptlet still prepares results; each ConstructChart still renders its own stored data. No scripts are rendered or diagrams opened during INIT. CHECK invalidation is suppressed only during technical dashboard writes.
+
+Creation preserves cloned styles/layout, clears chart caches, resets summary text and writes a two-row table saying Results to refresh. Manual existing dashboards without READY are reported for COMPLETE/REPAIR instead of being modified silently. Native cloning and INIT hooks still need live EA verification. COMPLETE/REPAIR wiring and ROOT dashboard aggregation remain subsequent work.
+
+Mock validation: native factory copy/reuse tests and initialized-package selection tests; no claim of native EA execution.
