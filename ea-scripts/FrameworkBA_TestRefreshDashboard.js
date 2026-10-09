@@ -5,14 +5,17 @@
 !INC ETNIC_FrameworkBA.FrameworkBA_CheckChartWriter
 !INC ETNIC_FrameworkBA.FrameworkBA_CheckDashboard
 
-// NORMAL JavaScript test: open the configured dashboard, then execute.
+// NORMAL JavaScript test: select the dashboard diagram in the Project Browser.
 // Reload only here, after all data writes; never from the Scriptlet.
 function FrameworkBA_TestRefreshDashboard()
 {
     function log(m) { Repository.WriteOutput("ETNIC_FrameworkBA", "[CHECK DASHBOARD TEST] " + m, 0); }
     try {
-        var diagram = Repository.GetCurrentDiagram();
-        if (!diagram) throw new Error("Ouvrez le diagramme CHECK a actualiser.");
+        if (Repository.GetTreeSelectedItemType() !== 8)
+            throw new Error("Selectionnez le diagramme CHECK dans le Project Browser.");
+        var diagram = Repository.GetTreeSelectedObject();
+        if (!diagram || !diagram.DiagramID)
+            throw new Error("Diagramme selectionne introuvable.");
         FrameworkBA_CheckDashboard.refresh(diagram, { output: log });
         log("Donnees preparees; rafraichissement du diagramme");
         Repository.ReloadDiagram(diagram.DiagramID);
