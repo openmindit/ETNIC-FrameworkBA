@@ -35,6 +35,12 @@ var FrameworkBA_CheckAnalysisCollector = (function () {
         var views = FrameworkBA_CheckRootViews.partition(snapshot, rootGuid);
         if (views.unresolved.length) throw new Error("Anomalies ROOT sans propriete resolue.");
         var issues = [], seen = {}, snapshots = [], snapshotSeen = {}, packages = [], missing = 0, notPlanned = 0;
+        var observedDates = {};
+        function observeDate(value, guid) {
+            if (typeof value !== "string" || !value) throw new Error("Date CHECK absente: " + guid);
+            observedDates["$" + value] = true;
+        }
+        observeDate(views.checkedAt, rootGuid);
         function add(issue, carrier) {
             var raw = issue.rawIssue || issue;
             // Mirrored group references share one descriptor, independent of their carrier.
@@ -52,15 +58,14 @@ var FrameworkBA_CheckAnalysisCollector = (function () {
             if (!packageKey || packageSeen[packageKey]) throw new Error("Reference package dupliquee ou vide.");
             packageSeen[packageKey] = true;
             var result = collectPackage(guid, rootGuid, { repository: repo, output: function () {} });
-            if (result.checkedAt !== views.checkedAt)
-                throw new Error("Dates CHECK differentes: " + guid + " ; relancez CHECK ROOT pour une vue coherente.");
+            // Each package CHECK receives its own timestamp during the ROOT run.
+            observeDate(result.checkedAt, guid);
             packages.push(result);
             missing += result.summary.missing;
             notPlanned += result.summary.notPlanned;
             for (var i = 0; i < result.snapshots.length; i++) {
                 var individual = result.snapshots[i], objectKey = key(individual.object.guid);
-                if (individual.checkedAt !== views.checkedAt)
-                    throw new Error("Snapshot individuel d'une autre date: " + individual.object.guid);
+                observeDate(individual.checkedAt, individual.object.guid);
                 if (snapshotSeen[objectKey]) continue;
                 snapshotSeen[objectKey] = true;
                 snapshots.push(individual);
@@ -70,6 +75,9 @@ var FrameworkBA_CheckAnalysisCollector = (function () {
             output("Package=" + guid + " | Snapshots=" + result.summary.found + "/" + result.summary.expected
                 + " | Anomalies avant deduplication=" + result.issues.length);
         }
+        var dateCount = 0;
+        for (var dateKey in observedDates) if (Object.prototype.hasOwnProperty.call(observedDates, dateKey)) dateCount++;
+        output("Dates CHECK observees=" + dateCount + " | Des heures differentes sont normales pendant CHECK ROOT");
         var counts = FrameworkBA_CheckRootViews.counts(issues);
         var rootCounts = FrameworkBA_CheckRootViews.counts(views.rootLocal);
         var globalCounts = FrameworkBA_CheckRootViews.counts(views.global);
@@ -80,7 +88,7 @@ var FrameworkBA_CheckAnalysisCollector = (function () {
             + " | Manquants=" + missing + " | Sans snapshot prevu=" + notPlanned + " | Synthese identique=" + identical);
         return { rootGuid: rootGuid, checkedAt: views.checkedAt, packages: packages, snapshots: snapshots,
             issues: issues, detailIssues: views.global, rootLocalIssues: views.rootLocal,
-            summary: counts, missing: missing, notPlanned: notPlanned, summaryMatchesRoot: identical };
+            observedDateCount: dateCount, summary: counts, missing: missing, notPlanned: notPlanned, summaryMatchesRoot: identical };
     }
     return { collect: collect };
 })();

@@ -17,6 +17,9 @@ const options={repository:repo,collectPackage,output(){}};
 const result=context.FrameworkBA_CheckAnalysisCollector.collect("R",options);
 assert.equal(result.issues.length,2); assert.equal(result.summaryMatchesRoot,true);
 assert.equal(result.detailIssues.length,0); assert.equal(result.snapshots.length,3);
+const timed=context.FrameworkBA_CheckAnalysisCollector.collect("R",Object.assign({},options,{collectPackage(){
+ const r=collectPackage();r.checkedAt="later";r.snapshots[1].checkedAt="later";return r;}}));
+assert.equal(timed.summaryMatchesRoot,true);assert.equal(timed.observedDateCount,2);
 assert.throws(()=>context.FrameworkBA_CheckAnalysisCollector.collect("R",Object.assign({},options,{collectPackage(){
- const r=collectPackage();r.checkedAt="other";return r;}})),/Dates CHECK/);
-console.log("Analysis collection: mirrored groups counted once, real totals and mixed dates checked");
+ const r=collectPackage();r.snapshots[0].checkedAt="";return r;}})),/Date CHECK absente/);
+console.log("Analysis collection: mirrored groups counted once, real totals and per-package timestamps accepted and missing dates rejected");
