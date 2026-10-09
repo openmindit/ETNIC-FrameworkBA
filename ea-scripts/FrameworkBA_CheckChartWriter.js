@@ -294,7 +294,10 @@ var FrameworkBA_CheckChartWriter = (function () {
         if (result.scope === "ANALYSIS" && result.packages) {
             var sums = [0, 0, 0];
             for (var ap = 0; ap < result.packages.length; ap++) {
-                var classification = prepareClassification(result.packages[ap], scope, options);
+                var classification = prepareClassification(result.packages[ap], scope, {
+                    foreignDiagramGuids: options.foreignDiagramGuids || [],
+                    foreignPackageGuids: result.foreignPackageGuids || []
+                });
                 for (var ai = 0; ai < 3; ai++) sums[ai] += classification.items[ai].count;
             }
             var titles = { ALL: "Classification des objets", PACKAGE: "Classification des packages",
@@ -344,6 +347,11 @@ var FrameworkBA_CheckChartWriter = (function () {
                 if (code === "ARTIFACT_NOT_IN_METAMODEL" && type === "ARTIFACT"
                     || code === "DIAGRAM_NOT_IN_METAMODEL" && type === "DIAGRAM")
                     recognized = false;
+            }
+            if (type === "PACKAGE") {
+                var foreignPackages = options.foreignPackageGuids || [];
+                for (var fp = 0; fp < foreignPackages.length; fp++)
+                    if (key(foreignPackages[fp]) === key(object.guid)) recognized = false;
             }
             add(object.guid, type, object.name, recognized, technical);
         }

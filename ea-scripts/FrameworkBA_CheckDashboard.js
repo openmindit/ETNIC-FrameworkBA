@@ -80,13 +80,18 @@ var FrameworkBA_CheckDashboard = (function () {
                 message: issue.message || issue.description || issue.code || "",
                 action: issue.action || "", rawIssue: issue };
         }
-        var issues = [], detail = [];
+        var issues = [], detail = [], foreignPackages = [];
+        for (var fp = 0; fp < (collected.rootLocalIssues || []).length; fp++) {
+            var rootIssue = collected.rootLocalIssues[fp];
+            if (rootIssue.code === "ROOT_FOREIGN_PACKAGE" && rootIssue.affectedObjectGuid)
+                foreignPackages.push(rootIssue.affectedObjectGuid);
+        }
         for (var i = 0; i < collected.issues.length; i++) issues.push(normalize(collected.issues[i]));
         for (var j = 0; j < collected.detailIssues.length; j++) detail.push(normalize(collected.detailIssues[j]));
         return { packageGuid: collected.rootGuid, checkedAt: collected.checkedAt, scope: "ANALYSIS",
             title: "Analyse - " + collected.rootName, packages: collected.packages,
             snapshots: collected.snapshots, metrics: metrics, summary: s, issues: issues,
-            detailIssues: detail, globalCount: detail.length,
+            foreignPackageGuids: foreignPackages, detailIssues: detail, globalCount: detail.length,
             objectsWithoutSnapshot: [] };
     }
 
