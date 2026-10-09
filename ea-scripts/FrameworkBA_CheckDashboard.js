@@ -109,8 +109,8 @@ var FrameworkBA_CheckDashboard = (function () {
         return [
             ["_Summary_Title", "SYNTHÈSE CHECK — " + packageName],
             ["_Summary_Check_Date", "Dernier CHECK : " + result.checkedAt],
-            ["_Summary_Error_Count", String(s.errors) + (result.scope === "ANALYSIS" ? " • dont globales : " + FrameworkBA_CheckRootViews.counts(result.detailIssues).errors : "")],
-            ["_Summary_Warning_Count", String(s.warnings) + (result.scope === "ANALYSIS" ? " • dont globaux : " + FrameworkBA_CheckRootViews.counts(result.detailIssues).warnings : "")],
+            ["_Summary_Error_Count", String(s.errors)],
+            ["_Summary_Warning_Count", String(s.warnings)],
             ["_Summary_Object_Count", String(s.referenced)],
             ["_Summary_Snapshot_Coverage", s.found + "/" + s.expected],
             ["_Summary_Snapshot_NotPlanned_Count", String(s.notPlanned)],
@@ -161,8 +161,7 @@ var FrameworkBA_CheckDashboard = (function () {
                 }
             }
             texts.push(["_Summary_Scope", "Analyse : " + result.packages.length + " packages controles • "
-                + artifactTotal + " artefacts • " + diagramTotal + " diagrammes • Detail : anomalies globales uniquement. "
-                + "Conformite et classification : contenu des packages controles."]);
+                + artifactTotal + " artefacts • " + diagramTotal + " diagrammes"]);
         } else {
         if (!targetSnapshot || !targetSnapshot.content) throw new Error("Contenu du snapshot cible absent.");
         texts.push(["_Summary_Scope", "Périmètre : 1 package • " + targetSnapshot.content.artifacts.length + " artefacts • " + targetSnapshot.content.diagrams.length + " diagrammes"]);
@@ -197,6 +196,14 @@ var FrameworkBA_CheckDashboard = (function () {
             textsChanged++;
         }
         if (tableUpdate.changed) repo.AdviseElementChange(table.ElementID);
+        // Opt-in for NORMAL test scripts only. Never reload inside Scriptlet refresh.
+        if (options.notifyCharts === true) {
+            for (var nc = 0; nc < charts.length; nc++) {
+                log("Notification graphique | Nom=" + charts[nc].Name);
+                repo.AdviseElementChange(charts[nc].ElementID);
+            }
+            log("Notifications graphiques terminees=" + charts.length);
+        }
         log("Fin | Graphiques prepares=" + charts.length + " | Graphiques modifies=" + chartsChanged + " | Textes modifies=" + textsChanged);
         return { result: result, chartsChanged: chartsChanged, textsChanged: textsChanged };
     }

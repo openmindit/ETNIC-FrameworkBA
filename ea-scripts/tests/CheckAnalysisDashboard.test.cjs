@@ -16,7 +16,8 @@ assert.equal(ctx.FrameworkBA_CheckChartWriter.prepareConformity(view,"ALL").tota
 const classification=ctx.FrameworkBA_CheckChartWriter.prepareClassification(view,"ALL");
 assert.equal(classification.total,2);assert.equal(classification.items[1].count,2);
 const texts=Object.fromEntries(ctx.FrameworkBA_CheckDashboard.buildSummary(view,ctx.FrameworkBA_CheckChartWriter));
-assert.equal(texts._Summary_Error_Count,"1 • dont globales : 0");
+assert.equal(texts._Summary_Error_Count,"1");
+assert.equal(texts._Summary_Warning_Count,"0");
 assert.throws(()=>ctx.FrameworkBA_CheckDashboard.analysisView(Object.assign({},collected,{summaryMatchesRoot:false})),/aucune ecriture/);
 assert.equal(ctx.FrameworkBA_CheckChartWriter.prepareClassification(part,"ALL").total,2);
 console.log("ANALYSIS: consolidated charts, root anomalies, global-only detail and PACKAGE classification regression passed");
