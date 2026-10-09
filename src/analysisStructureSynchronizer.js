@@ -10291,18 +10291,8 @@ return {
 			issue
 		);
 
-		if (
-			issue.severity === "ERROR"
-		)
-		{
-			result.summary.errors++;
-		}
-		else if (
-			issue.severity === "WARNING"
-		)
-		{
-			result.summary.warnings++;
-		}
+		// Count severity and action once per group; object references do not add counts.
+		this._incrementCheckSummary(result.summary, issue);
 
 		/*
 		 * 2. Référencement sur chacun des
@@ -12866,6 +12856,15 @@ return {
 
 				return false;
 			}
+
+			// Older runtime callers can omit checkedAt. Persist a usable ROOT date.
+            if (checkResult.scope === "ROOT" &&
+                (typeof checkResult.checkedAt !== "string" || !checkResult.checkedAt.replace(/\s/g, "")))
+            {
+                checkResult.checkedAt = addin.utils.formatFrenchDateTime(new Date());
+                if (typeof checkResult.checkedAt !== "string" || !checkResult.checkedAt.replace(/\s/g, ""))
+                    throw new Error("Date CHECK ROOT indisponible.");
+            }
 
 			var json =
 				JSON.stringify(
