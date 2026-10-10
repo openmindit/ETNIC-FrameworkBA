@@ -31,7 +31,14 @@ var FrameworkBA_CheckDashboard = (function () {
         if (!diagram) throw new Error("Diagramme CHECK absent.");
         var pkg = repository.GetPackageByID(diagram.PackageID);
         if (!pkg) throw new Error("Dossier du diagramme introuvable.");
-        var element = pkg.Element;
+        var sourceElement = pkg.Element, sourceTags = sourceElement.TaggedValues, tags = [];
+        sourceTags.Refresh();
+        var tagCount = sourceTags.Count;
+        for (var ti = 0; ti < tagCount; ti++) {
+            var sourceTag = sourceTags.GetAt(ti);
+            tags.push({ Name: String(sourceTag.Name), Value: String(sourceTag.Value || ""), Notes: String(sourceTag.Notes || "") });
+        }
+        var element = { TaggedValues: { Count: tags.length, Refresh: function () {}, GetAt: function (i) { return tags[i]; } } };
         var config = {
             targetGuid: tagValue(element, "FrameworkBA_Check_TargetGuid", true),
             rootGuid: tagValue(element, "FrameworkBA_Check_RootGuid", true),
@@ -121,7 +128,62 @@ var FrameworkBA_CheckDashboard = (function () {
         ];
     }
 
+    function xmlText(value) {
+        var parts = String(value).split(/(<!\[CDATA\[[\s\S]*?\]\]>)/g), out = "";
+        for (var i = 0; i < parts.length; i++) {
+            if (parts[i].indexOf("<![CDATA[") === 0) out += parts[i].slice(9, -3);
+            else out += parts[i].replace(/&(#x[0-9a-f]+|#[0-9]+|amp|lt|gt|quot|apos);/gi, function (_, entity) {
+                var names = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+                if (entity.charAt(0) !== "#") return names[entity.toLowerCase()];
+                var n = entity.charAt(1).toLowerCase() === "x" ? parseInt(entity.slice(2), 16) : parseInt(entity.slice(1), 10);
+                if (n <= 65535) return String.fromCharCode(n);
+                n -= 65536;
+                return String.fromCharCode(55296 + (n >> 10), 56320 + (n & 1023));
+            });
+        }
+        return out;
+    }
+    function sqlField(row, name, required) {
+        var match = new RegExp("<" + name + "(?:\\s[^>]*)?>([\\s\\S]*?)</" + name + ">", "i").exec(row);
+        if (match) return xmlText(match[1]);
+        if (required) throw new Error("Colonne SQL CHECK absente: " + name);
+        return "";
+    }
+    function indexDiagramSql(diagram, repository) {
+        var diagramId = Number(diagram.DiagramID);
+        if (!isFinite(diagramId) || diagramId <= 0 || Math.floor(diagramId) !== diagramId)
+            throw new Error("Identifiant diagramme invalide.");
+        var xml = String(repository.SQLQuery("SELECT o.Object_ID AS TargetId, o.Name AS TargetName FROM t_diagramobjects d INNER JOIN t_object o ON o.Object_ID = d.Object_ID WHERE d.Diagram_ID = " + diagramId));
+        if (!/<EADATA(?:\s|>)/i.test(xml) || !/<Dataset_0(?:\s|>|\/)/i.test(xml))
+            throw new Error("Reponse SQL invalide pour les cibles du dashboard.");
+        var rows = /<Row(?:\s[^>]*)?>([\s\S]*?)<\/Row>/gi, row, byName = {}, seen = {}, cache = {};
+        var index = { reads: 0, mode: "SQL", find: function (name) {
+            var targets = byName["$" + name];
+            if (!targets || !targets.length) throw new Error("Cible absente du diagramme: " + name);
+            if (targets.length !== 1) throw new Error("Plusieurs cibles portent le nom " + name);
+            var id = targets[0];
+            if (!cache[id]) {
+                var element = repository.GetElementByID(id);
+                index.reads++;
+                if (!element || String(element.Name) !== name) throw new Error("Cible dashboard modifiee pendant la preparation: " + name);
+                cache[id] = element;
+            }
+            return cache[id];
+        } };
+        while ((row = rows.exec(xml)) !== null) {
+            var id = Number(sqlField(row[1], "TargetId", true));
+            if (!isFinite(id) || id <= 0 || Math.floor(id) !== id) throw new Error("Identifiant cible SQL invalide.");
+            if (seen[id]) continue;
+            seen[id] = true;
+            var name = "$" + sqlField(row[1], "TargetName", false);
+            if (!byName[name]) byName[name] = [];
+            byName[name].push(id);
+        }
+        return index;
+    }
+
     function indexDiagram(diagram, repository) {
+        if (typeof repository.SQLQuery !== "undefined") return indexDiagramSql(diagram, repository);
         var byName = {}, seen = {}, reads = 0;
         var objects = diagram.DiagramObjects;
         var total = objects.Count;
@@ -193,7 +255,6 @@ var FrameworkBA_CheckDashboard = (function () {
         texts.push(["_Summary_Scope", "Périmètre : 1 package • " + targetSnapshot.content.artifacts.length + " artefacts • " + targetSnapshot.content.diagrams.length + " diagrammes"]);
         }
         var targetsIndex = indexDiagram(diagram, repo);
-        log("Cibles indexees | Elements lus=" + targetsIndex.reads);
         function find(name) { return targetsIndex.find(name); }
         var table = find("_Detail_Table"), charts = [], textTargets = [];
         for (var i = 0; i < definitions.length; i++) {
@@ -209,6 +270,7 @@ var FrameworkBA_CheckDashboard = (function () {
                 throw new Error("Text ou Note attendu: " + text.Name);
             textTargets.push(text);
         }
+        log("Cibles indexees | Mode=" + (targetsIndex.mode || "COM") + " | Elements lus=" + targetsIndex.reads);
         log("Temps | Collecte et preparation ms=" + (new Date().getTime() - started));
         // All payloads and targets resolved before the first write.
         var tableUpdate = FrameworkBA_CheckTableWriter.write(table.ElementGUID, config.scope === "ANALYSIS" ? { issues: result.detailIssues, summary: { missing: 0 }, emptyMessage: "Aucune anomalie globale interpackages." } : result, { repository: repo, refresh: false, output: log });
@@ -232,4 +294,5 @@ var FrameworkBA_CheckDashboard = (function () {
     }
     return { indexDiagram: indexDiagram, analysisView: analysisView, readConfiguration: readConfiguration, buildSummary: summary, refresh: refresh };
 })();
+
 
