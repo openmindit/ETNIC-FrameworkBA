@@ -1,0 +1,26 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync(process.argv[2] || require('path').join(__dirname,'../../src/analysisStructureSynchronizer.js'),'utf8');
+function method(name){const start=source.indexOf(name+': function');assert(start>=0);const begin=source.indexOf('function',start),brace=source.indexOf('{',begin);let depth=1,end=brace+1;while(depth){if(source[end]==='{')depth++;if(source[end]==='}')depth--;end++;}return vm.runInNewContext('('+source.slice(begin,end)+')',{addin});}
+const constants={CHECK_SEVERITY_ERROR:'ERROR',CHECK_SEVERITY_WARNING:'WARNING'};
+for(const x of ['INIT','COMPLETE','REPAIR','MANUAL_COMPLETE','MANUAL_REMOVE','MANUAL_MOVE','MAKE_TECHNICAL','MAKE_BUSINESS','MANUAL_REVIEW'])constants['CHECK_ACTION_'+x]=x;
+const addin={fbaConstants:constants,utils:{normalizeGuid:x=>x.toUpperCase(),isEmpty:x=>!x},logger:{warning(){}}};
+const api={_incrementCheckSummary:method('_incrementCheckSummary'),_getCheckObject:(r,g)=>r.objects[g]};
+api.register=method('_registerCheckIssueForObjects');
+const result={issues:[],summary:{},objects:{A:{issues:[],summary:{errors:0,warnings:0}},B:{issues:[],summary:{errors:0,warnings:0}}}};
+api.register(result,{severity:'ERROR',action:'MANUAL_REVIEW'},['A','B','A']);
+assert.equal(result.issues.length,1);assert.equal(result.summary.errors,1);assert.equal(result.summary.manualReview,1);assert.equal(result.objects.A.issues.length,1);assert.equal(result.objects.B.issues.length,1);
+api.register(result,{severity:'WARNING',action:'MANUAL_REVIEW'},['A']);
+assert.equal(result.summary.warnings,1);assert.equal(result.summary.manualReview,2);
+assert(source.includes('Date CHECK ROOT indisponible.'));
+let saved='',clears=0;const element={ElementGUID:'E'};
+addin.logger.info=()=>{};addin.logger.error=()=>{};
+addin.utils.formatFrenchDateTime=()=> '09-10-2026 - 13:50';
+addin.repositoryService={setTaggedValueMemo(e,n,json){saved=json;return true;},getTaggedValueMemo(){return saved;}};
+addin.frameworkBA={_setCheckRequired(){clears++;return true;}};
+global.Repository={GetElementByGuid(){return element;}};
+const persistenceSource=source.slice(source.indexOf('_persistCheckSnapshotWithoutInvalidation: function'),source.indexOf('\n\t_loadCheckSnapshot:',source.indexOf('_persistCheckSnapshotWithoutInvalidation: function'))).trim().replace(/,$/,'');
+const persist=vm.runInNewContext('({'+persistenceSource+'})',{addin,Repository:global.Repository})._persistCheckSnapshotWithoutInvalidation;
+const snapshot={scope:'ROOT',success:true,objects:{}};
+assert.equal(persist({Element:element,Name:'Root'},snapshot),true);assert.equal(JSON.parse(saved).checkedAt,'09-10-2026 - 13:50');assert.equal(clears,1);
+snapshot.checkedAt='original';assert.equal(persist({Element:element,Name:'Root'},snapshot),true);assert.equal(JSON.parse(saved).checkedAt,'original');
+console.log('Grouped severity/action counted once; affected objects retained: OK');

@@ -1,0 +1,14 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert'),path=require('path');
+const source=fs.readFileSync(process.argv[2] || path.join(__dirname,'../../src/analysisStructureSynchronizer.js'),'utf8');
+const start=source.indexOf('_buildCompactRootCheckSnapshot: function'),end=source.indexOf('\n\tcheckAnalysis:',start);
+const addin={utils:{formatFrenchDateTime:()=> '09-10-2026 - 14:06'}};
+const api=vm.runInNewContext('({'+source.slice(start,end).trim().replace(/,$/,'')+'})',{addin});
+api._incrementCheckSummary=(s,i)=>{if(i.severity==='ERROR')s.errors++;if(i.action==='MANUAL_REVIEW')s.manualReview++;};
+const local={code:'LOCAL',severity:'ERROR',action:'MANUAL_COMPLETE'},global={scope:'GLOBAL',code:'DUP',severity:'ERROR',action:'MANUAL_REVIEW',objectGuids:['A','B']},rootLocal={scope:'LOCAL',code:'TECH',severity:'ERROR',action:'MANUAL_REVIEW',objectGuids:['C','D']};
+const pr={rule:'LOCAL',payload:'x'.repeat(200000)},gr={scope:'GLOBAL',rule:'UNIQUE'};
+const result={success:true,issues:[local,global,rootLocal],ruleResults:[pr,gr],objects:{A:{payload:'x'.repeat(200000)}},summary:{errors:3},metrics:{objects:{total:4}}};
+const compact=api._buildCompactRootCheckSnapshot({PackageGUID:'ROOT',Name:'Analysis'},result,[local],[pr],['P']);
+assert.equal(compact.schemaVersion,2);assert.equal(compact.checkedAt,'09-10-2026 - 14:06');assert.equal(compact.issues.length,2);assert.equal(compact.summary.errors,2);assert.equal(compact.summary.manualReview,2);assert.equal(compact.analysisSummary.errors,3);
+assert.deepEqual(Array.from(compact.issuePartitions.global),[0]);assert.deepEqual(Array.from(compact.issuePartitions.local),[1]);assert.equal(compact.objects,undefined);assert.equal(compact.ruleResults.length,1);assert(JSON.stringify(compact).length<2000);
+assert.equal(result.issues.length,3);assert.equal(result.ruleResults.length,2);assert(result.objects.A);
+console.log('Compact ROOT: provenance, unique groups, package refs, date, unchanged runtime: OK');

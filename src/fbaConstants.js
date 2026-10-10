@@ -14,6 +14,17 @@
 
 let constants = {
 
+    // Allowed direct content of an analysis ROOT; independent of analysis-element definitions.
+    ANALYSIS_ROOT_CONTENT: {
+        libraryName: "_Librairie",
+        homeDiagramName: "TXT Accueil",
+        homeDiagramType: "Logical",
+        homeDiagramMetaType: "Labnaf - Common::Free Text"
+    },
+
+    // Optional fallback; root tag FrameworkBA_Check_PrototypeGuid takes priority.
+    CHECK_DASHBOARD_PROTOTYPE_GUID: "",
+
     // ========================================================
     // FRAMEWORK
     // ========================================================
@@ -44,6 +55,9 @@ let constants = {
     TECHNICAL_NAME_PREFIX:
         "_",
 		
+	TAG_CHECK_REQUIRED:
+        "ETNIC_Check_Required",
+
 	TAG_CHECK_RESULT:
 		"ETNIC_Check_Result",
 
@@ -134,6 +148,9 @@ let constants = {
 
 	CHECK_ISSUE_DIAGRAM_TECHNICAL_NAME:
 		"DIAGRAM_TECHNICAL_NAME",
+
+	CHECK_ISSUE_DIAGRAM_REGISTRY_MISSING:
+		"DIAGRAM_REGISTRY_MISSING",
 		
 	CHECK_ISSUE_FOREIGN_ARTIFACT: 
 		"FOREIGN_ARTIFACT",

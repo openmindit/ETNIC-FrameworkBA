@@ -4305,6 +4305,183 @@ return {
 		return null;
 	},
 		
+	_repairDiagramName: function(diagram, effectiveConfig)
+	{
+		var issues = this._checkDiagramName(diagram, effectiveConfig);
+		if (!issues || issues.length === 0)
+			return true;
+
+		var prefix = addin.utils.trim(effectiveConfig.namePrefix || "");
+		var oldName = diagram.Name;
+		var name = addin.utils.trim(oldName || "");
+		var technicalMarker = "";
+
+		if (name.charAt(0) === "_")
+		{
+			technicalMarker = "_";
+			name = addin.utils.trim(name.substring(1));
+		}
+
+		// Retirer uniquement les occurrences initiales du préfixe connu.
+		// Le libellé métier et le marqueur technique sont conservés.
+		while (
+			name.toLowerCase() === prefix.toLowerCase() ||
+			name.substring(0, prefix.length + 1).toLowerCase() ===
+				(prefix + " ").toLowerCase()
+		)
+		{
+			name = addin.utils.trim(name.substring(prefix.length));
+		}
+
+		diagram.Name = technicalMarker + prefix + " " + name;
+
+		if (!diagram.Update())
+		{
+			diagram.Name = oldName;
+			addin.logger.error("REPAIR nom de diagramme en échec | DiagramGUID=" + diagram.DiagramGUID);
+			return false;
+		}
+
+		addin.logger.info(
+			"Nom de diagramme réparé"
+			+ " | DiagramGUID=" + diagram.DiagramGUID
+			+ " | Before=" + oldName
+			+ " | After=" + diagram.Name
+		);
+
+		return true;
+	},
+
+	_repairDiagramRegistryEntries: function(rootPackage, analysisPackage, registryIndex)
+	{
+		if (!rootPackage || !analysisPackage || !analysisPackage.Element)
+			return false;
+
+		var sourceGuid = addin.utils.trim(addin.repositoryService.getTaggedValue(
+			analysisPackage.Element,
+			addin.fbaConstants.TAG_SOURCE_ANALYSIS_ELEMENT_GUID
+		));
+
+		var definitions = this._getOperationDefinitions();
+		var analysisDefinition = null;
+
+		for (var i = 0; i < definitions.length; i++)
+		{
+			if (definitions[i] && addin.utils.equalsIgnoreCase(definitions[i].guid, sourceGuid))
+			{
+				analysisDefinition = definitions[i];
+				break;
+			}
+		}
+
+		if (!analysisDefinition || !analysisDefinition.element)
+			return false;
+
+		var diagramDefinitions = this._loadDiagramDefinitions(analysisDefinition.element);
+		var recognizedDiagramGuids = {};
+		var repairedCount = 0;
+		var registryPackage = registryIndex && registryIndex.registryPackage
+			? registryIndex.registryPackage
+			: this._resolveDiagramRegistryPackage(rootPackage);
+
+		if (!registryPackage)
+			return false;
+
+		analysisPackage.Diagrams.Refresh();
+
+		for (var d = 0; d < diagramDefinitions.length; d++)
+		{
+			var diagramDefinition = diagramDefinitions[d];
+			if (!diagramDefinition) continue;
+
+			var effectiveConfig = this._resolveEffectiveDiagramConfig(diagramDefinition);
+			if (!effectiveConfig) return false;
+
+			for (var j = 0; j < analysisPackage.Diagrams.Count; j++)
+			{
+				var diagram = analysisPackage.Diagrams.GetAt(j);
+				if (!diagram) continue;
+
+				var diagramGuid = addin.utils.normalizeGuid(diagram.DiagramGUID);
+				if (recognizedDiagramGuids[diagramGuid]) continue;
+
+				if (!addin.utils.equalsIgnoreCase(
+					addin.utils.trim(diagram.MetaType),
+					addin.utils.trim(diagramDefinition.metaType)
+				)) continue;
+
+				recognizedDiagramGuids[diagramGuid] = true;
+
+				if (!this._repairDiagramName(diagram, effectiveConfig))
+					return false;
+
+				var entry = this._findDiagramRegistryEntryByGeneratedGuid(
+					registryPackage,
+					diagram.DiagramGUID,
+					registryIndex
+				);
+
+				if (entry)
+				{
+					var expectedRegistryName = this._getDiagramRegistryName(diagram);
+					if (entry.Name !== expectedRegistryName)
+					{
+						var oldRegistryName = entry.Name;
+						entry.Name = expectedRegistryName;
+						if (!entry.Update())
+						{
+							entry.Name = oldRegistryName;
+							addin.logger.error("REPAIR nom DGC en échec | DGCGUID=" + entry.ElementGUID);
+							return false;
+						}
+						addin.logger.info(
+							"Nom DGC synchronisé"
+							+ " | DiagramGUID=" + diagram.DiagramGUID
+							+ " | DGCGUID=" + entry.ElementGUID
+							+ " | Name=" + entry.Name
+						);
+					}
+					continue;
+				}
+
+				entry = this._ensureDiagramRegistryEntry(
+					rootPackage,
+					diagram,
+					diagramDefinition,
+					registryIndex
+				);
+
+				if (!entry)
+				return false;
+
+				repairedCount++;
+
+				addin.logger.info(
+					"DGC d'instance réparé"
+					+ " | Package=" + analysisPackage.Name
+					+ " | Diagram=" + diagram.Name
+					+ " | DiagramGUID=" + diagram.DiagramGUID
+					+ " | DGC=" + entry.Name
+					+ " | DGCGUID=" + entry.ElementGUID
+				);
+			}
+		}
+
+		addin.logger.info(
+			"REPAIR DGC terminé"
+			+ " | Package=" + analysisPackage.Name
+			+ " | Created=" + repairedCount
+		);
+
+		return true;
+	},
+
+	_getDiagramRegistryName: function(diagram)
+	{
+		var name = addin.utils.trim(diagram ? diagram.Name : "");
+		return name.charAt(0) === "_" ? name : "_" + name;
+	},
+
 	_ensureDiagramRegistryEntry: function(
 		rootPackage,
 		generatedDiagram,
@@ -4439,7 +4616,7 @@ return {
 
 		registryEntry =
 			registryPackage.Elements.AddNew(
-				generatedDiagram.Name,
+				this._getDiagramRegistryName(generatedDiagram),
 				addin.fbaConstants
 					.DIAGRAM_REGISTRY_ELEMENT_TYPE
 			);
@@ -7503,7 +7680,21 @@ return {
 		return codes.join(";");
 	},
 	
-	_persistCheckResult: function(element, issues)
+	_persistCheckResult: function(object, checkResult)
+    {
+        var previous = addin.checkInvalidationSuppressed;
+        addin.checkInvalidationSuppressed = true;
+        try
+        {
+            return this.persistCheckResultWithoutInvalidation(object, checkResult);
+        }
+        finally
+        {
+            addin.checkInvalidationSuppressed = previous;
+        }
+    },
+
+    persistCheckResultWithoutInvalidation: function(element, issues)
 	{
 		if (!element)
 		{
@@ -9868,38 +10059,43 @@ return {
 			issue
 		);
 
-		if (addin.utils.isEmpty(issue.objectGuid))
-			return true;
+		// Une règle de diagramme reste portée par ce diagramme.
+		// objectGuid peut identifier l'artefact concerné par l'action,
+		// sans désigner le propriétaire du résultat CHECK.
+		var ownerGuid = !addin.utils.isEmpty(issue.diagramGuid)
+			? issue.diagramGuid
+			: issue.objectGuid;
 
-		var objectResult =
-			this._getCheckObject(
-				result,
-				issue.objectGuid
-			);
-
+		var objectResult = this._getCheckObject(result, ownerGuid);
 		if (!objectResult)
 			return true;
 
 		objectResult.issues.push(issue);
 
-		if (
-			issue.severity ===
-			addin.fbaConstants.CHECK_SEVERITY_ERROR
-		)
-		{
+		if (issue.severity === addin.fbaConstants.CHECK_SEVERITY_ERROR)
 			objectResult.summary.errors++;
-		}
-		else if (
-			issue.severity ===
-			addin.fbaConstants.CHECK_SEVERITY_WARNING
-		)
-		{
+		else if (issue.severity === addin.fbaConstants.CHECK_SEVERITY_WARNING)
 			objectResult.summary.warnings++;
-		}
 
 		return true;
 	},
 		
+	_checkRuleBelongsToObject: function(ruleResult, objectGuid)
+	{
+		if (!ruleResult || addin.utils.isEmpty(objectGuid))
+			return false;
+
+		// Une règle exécutée sur un diagramme reste dans son snapshot,
+		// même lorsque l'objet examiné est un artefact représenté.
+		var ownerGuid =
+			addin.utils.equalsIgnoreCase(ruleResult.scopeType, "DIAGRAM")
+				? ruleResult.scopeGuid
+				: ruleResult.objectGuid;
+
+		return !addin.utils.isEmpty(ownerGuid) &&
+			addin.utils.equalsIgnoreCase(ownerGuid, objectGuid);
+	},
+
 	_createCheckRuleResult: function(
 		rule,
 		scope,
@@ -10095,18 +10291,8 @@ return {
 			issue
 		);
 
-		if (
-			issue.severity === "ERROR"
-		)
-		{
-			result.summary.errors++;
-		}
-		else if (
-			issue.severity === "WARNING"
-		)
-		{
-			result.summary.warnings++;
-		}
+		// Count severity and action once per group; object references do not add counts.
+		this._incrementCheckSummary(result.summary, issue);
 
 		/*
 		 * 2. Référencement sur chacun des
@@ -10242,6 +10428,76 @@ return {
 		};
 	},
 	
+	_getDiagramCheckArtifactDefinitions: function(localDefinitions, diagramDefinitions, checkResult)
+	{
+		var definitions = localDefinitions.slice(0);
+		var needsExternalDefinitions = false;
+
+		for (var i = 0; i < diagramDefinitions.length; i++)
+		{
+			var found = false;
+			for (var j = 0; j < definitions.length; j++)
+			{
+				if (addin.utils.equalsIgnoreCase(
+					definitions[j].prototypeGuid, diagramDefinitions[i].guid))
+				{
+					found = true;
+					break;
+				}
+			}
+			if (!found) needsExternalDefinitions = true;
+		}
+
+		if (!needsExternalDefinitions)
+			return definitions;
+
+		// Cache limité à ce CHECK : aucun état conservé entre deux contrôles.
+		var candidates = checkResult
+			? checkResult.diagramArtifactDefinitionsCache
+			: null;
+
+		if (!candidates)
+		{
+			candidates = [];
+			var analysisDefinitions = this._getOperationDefinitions();
+			var artifactIndex = this._getOperationArtifactDefinitionsIndex();
+			var tagIndex = this._getOperationAnalysisElementTagsIndex();
+
+			for (var a = 0; a < analysisDefinitions.length; a++)
+			{
+				var loadedDefinitions = this._loadArtifactDefinitions(
+					analysisDefinitions[a], artifactIndex, tagIndex);
+				for (var loadedIndex = 0; loadedIndex < loadedDefinitions.length; loadedIndex++)
+					candidates.push(loadedDefinitions[loadedIndex]);
+			}
+
+			if (checkResult)
+				Object.defineProperty(checkResult, "diagramArtifactDefinitionsCache", {
+					value: candidates,
+					enumerable: false,
+					configurable: true
+				});
+		}
+
+		{
+			for (var c = 0; c < candidates.length; c++)
+			{
+				var exists = false;
+				for (var d = 0; d < definitions.length; d++)
+				{
+					if (addin.utils.equalsIgnoreCase(
+						definitions[d].connectorGuid, candidates[c].connectorGuid))
+					{
+						exists = true;
+						break;
+					}
+				}
+				if (!exists) definitions.push(candidates[c]);
+			}
+		}
+		return definitions;
+	},
+
 	_findCanonicalArtifactDefinitions: function(
 		diagramArtifactDefinition,
 		artifactDefinitions)
@@ -10256,6 +10512,19 @@ return {
 			return result;
 		}
 
+
+		// Le prototype du diagramme source fournit l'identité de référence.
+		for (var exactIndex = 0; exactIndex < artifactDefinitions.length; exactIndex++)
+		{
+			var exactDefinition = artifactDefinitions[exactIndex];
+			if (exactDefinition && addin.utils.equalsIgnoreCase(
+				exactDefinition.prototypeGuid, diagramArtifactDefinition.guid))
+			{
+				result.push(exactDefinition);
+			}
+		}
+		if (result.length > 0)
+			return result;
 
 		for (
 			var i = 0;
@@ -10612,6 +10881,10 @@ return {
 		}
 
 
+		var localArtifactDefinitions = artifactDefinitions || [];
+		artifactDefinitions = this._getDiagramCheckArtifactDefinitions(
+			localArtifactDefinitions, diagramArtifactDefinitions, checkResult);
+
 		addin.logger.debug(
 			"CHECK artefacts diagramme"
 			+ " | Diagram=" + diagram.Name
@@ -10877,6 +11150,18 @@ return {
 						artifact
 					);
 				
+				var belongsToCurrentAnalysis = false;
+				for (var localIndex = 0; localIndex < localArtifactDefinitions.length; localIndex++)
+				{
+					if (addin.utils.equalsIgnoreCase(
+						localArtifactDefinitions[localIndex].prototypeGuid,
+						canonicalArtifactDefinition.prototypeGuid))
+					{
+						belongsToCurrentAnalysis = true;
+						break;
+					}
+				}
+
 				// ====================================================
 				// 48E.1 - RULE RESULT
 				// ARTIFACT LOCATION
@@ -10888,6 +11173,7 @@ return {
 				)
 				{
 					var artifactLocationPassed =
+						!belongsToCurrentAnalysis ||
 						artifact.PackageID == diagram.PackageID;
 
 
@@ -10933,7 +11219,7 @@ return {
 				// 5.1 VERIFICATION DU CONTEXTE DU PACKAGE
 				// ------------------------------------------------
 
-				if (artifact.PackageID != diagram.PackageID)
+				if (belongsToCurrentAnalysis && artifact.PackageID != diagram.PackageID)
 				{
 					var artifactParentPackage =
 						addin.repositoryService.getPackageById(
@@ -12120,7 +12406,433 @@ return {
 		return issues;
 	},
 	
-	_persistCheckSnapshot: function(
+	hash: function(object)
+	{
+		if (!object)
+			return "";
+
+		var modified = null;
+
+		/*
+		 * EA.Diagram n'expose pas ModifiedDate de manière fiable
+		 * via l'Automation Interface utilisée par le Model-Based Add-In.
+		 * La valeur de référence est donc lue directement dans t_diagram.
+		 */
+		if (!addin.utils.isEmpty(object.DiagramGUID))
+		{
+			modified =
+				addin.database.getFieldValueString(
+					"ModifiedDate",
+					"t_diagram",
+					"ea_guid = "
+						+ addin.database.safeSQLString(
+							object.DiagramGUID
+						)
+				);
+		}
+		else
+		{
+			modified =
+				object.Modified;
+
+			if (
+				modified == null &&
+				object.Element
+			)
+			{
+				modified =
+					object.Element.Modified;
+			}
+		}
+
+		var value =
+			modified == null
+				? ""
+				: String(modified);
+
+		if (!addin.utils.isEmpty(object.DiagramGUID))
+		{
+			// Diagram.Update() peut renommer sans changer ModifiedDate.
+			// JSON évite les ambiguïtés de concaténation des champs.
+			value = JSON.stringify([value, String(object.Name || "")]);
+		}
+
+		/*
+		 * Diagrammes : ModifiedDate et nom exact.
+		 * Autres objets : Modified.
+		 *
+		 * Le CHECK et la consolidation ne connaissent pas cette
+		 * stratégie. Elle pourra donc évoluer ici sans modifier
+		 * le contrat de persistance.
+		 */
+		var hash = 2166136261;
+
+		for (
+			var i = 0;
+			i < value.length;
+			i++
+		)
+		{
+			hash ^= value.charCodeAt(i);
+
+			hash +=
+				(hash << 1) +
+				(hash << 4) +
+				(hash << 7) +
+				(hash << 8) +
+				(hash << 24);
+		}
+
+		return (
+			"00000000" +
+			(hash >>> 0).toString(16)
+		).slice(-8).toUpperCase();
+	},
+
+
+	persistCheckResult: function(
+		object,
+		checkResult
+	)
+	{
+		if (!object || !checkResult)
+			return false;
+
+		var targetElement = null;
+		var objectGuid = "";
+
+		if (!addin.utils.isEmpty(object.ElementGUID))
+		{
+			targetElement = object;
+			objectGuid = object.ElementGUID;
+		}
+		else if (
+			!addin.utils.isEmpty(object.PackageGUID) &&
+			object.Element
+		)
+		{
+			targetElement = object.Element;
+			objectGuid = object.PackageGUID;
+		}
+
+		if (
+			!targetElement &&
+			addin.utils.isEmpty(object.DiagramGUID)
+		)
+		{
+			addin.logger.warning(
+				"Persistance CHECK non supportée pour l'objet reçu"
+			);
+
+			return false;
+		}
+
+		/*
+		 * Un Diagram EA ne porte pas directement le Tagged Value CHECK.
+		 * Son résultat est persisté sur le DGC effectif qui le configure.
+		 * Le hash reste calculé sur le diagramme contrôlé.
+		 */
+		if (!addin.utils.isEmpty(object.DiagramGUID))
+		{
+			objectGuid = object.DiagramGUID;
+		}
+
+		var normalizedGuid =
+			addin.utils.normalizeGuid(
+				objectGuid
+			);
+
+		var objectResult =
+			checkResult.objects
+				? checkResult.objects[normalizedGuid]
+				: null;
+
+		if (!objectResult)
+		{
+			addin.logger.warning(
+				"Résultat CHECK objet introuvable"
+				+ " | GUID=" + objectGuid
+			);
+
+			return false;
+		}
+
+		if (!addin.utils.isEmpty(object.DiagramGUID))
+		{
+			if (addin.utils.isEmpty(objectResult.checkStorageGuid))
+			{
+				addin.logger.warning(
+					"Persistance CHECK diagramme impossible"
+					+ " | DGC introuvable"
+					+ " | Diagram=" + object.Name
+					+ " | GUID=" + object.DiagramGUID
+				);
+
+				return false;
+			}
+
+			targetElement =
+				addin.repositoryService.getElementByGuid(
+					objectResult.checkStorageGuid
+				);
+
+			if (!targetElement)
+			{
+				addin.logger.warning(
+					"Persistance CHECK diagramme impossible"
+					+ " | DGC=" + objectResult.checkStorageGuid
+					+ " | Diagram=" + object.Name
+				);
+
+				return false;
+			}
+		}
+
+		var objectRuleResults = [];
+		var ruleResults =
+			checkResult.ruleResults || [];
+
+		for (
+			var i = 0;
+			i < ruleResults.length;
+			i++
+		)
+		{
+			var ruleResult =
+				ruleResults[i];
+
+			if (!ruleResult)
+				continue;
+
+			if (
+				this._checkRuleBelongsToObject(
+					ruleResult,
+					objectGuid
+				)
+			)
+			{
+				objectRuleResults.push(
+					ruleResult
+				);
+			}
+		}
+
+		var snapshot = {
+			schemaVersion: 1,
+			scope:
+				objectResult.objectType || "",
+			checkedAt:
+				checkResult.checkedAt || "",
+			sourceHash:
+				this.hash(object),
+			status:
+				this._getCheckStatus(
+					objectResult.issues || []
+				),
+			object: {
+				guid:
+					objectResult.guid || normalizedGuid,
+				type:
+					objectResult.objectType || "",
+				name:
+					objectResult.name || "",
+				parentGuid:
+					objectResult.parentGuid || ""
+			},
+			issues:
+				objectResult.issues || [],
+			ruleResults:
+				objectRuleResults
+		};
+
+		/*
+		 * Le snapshot PACKAGE porte la composition observée pendant
+		 * ce CHECK. Elle permettra à la consolidation de détecter
+		 * ajout / suppression / déplacement sans relancer les règles.
+		 * Les métriques sont un cache dérivé, jamais la source de vérité.
+		 */
+		if (objectResult.objectType == "PACKAGE")
+		{
+			var artifactGuids = [];
+			var diagramGuids = [];
+			var diagramsWithoutSnapshot = [];
+			var checkedObjects = checkResult.objects || {};
+
+			for (var checkedGuid in checkedObjects)
+			{
+				if (!checkedObjects.hasOwnProperty(checkedGuid))
+					continue;
+
+				var checkedObject = checkedObjects[checkedGuid];
+
+				if (!checkedObject)
+					continue;
+
+				if (checkedObject.objectType == "ARTIFACT")
+				{
+					if (!addin.utils.equalsIgnoreCase(checkedObject.parentGuid, objectGuid))
+						continue;
+					artifactGuids.push(checkedObject.guid);
+				}
+				else if (checkedObject.objectType == "DIAGRAM")
+				{
+					diagramGuids.push(checkedObject.guid);
+                    var diagramIssues = checkedObject.issues || [];
+                    for (var foreignIssueIndex = 0; foreignIssueIndex < diagramIssues.length; foreignIssueIndex++) {
+                        if (diagramIssues[foreignIssueIndex].code !== "DIAGRAM_NOT_IN_METAMODEL") continue;
+                        // Foreign diagrams have no generated DGC. Preserve their CHECK issues
+                        // in the PACKAGE snapshot rather than requiring a diagram snapshot.
+                        diagramsWithoutSnapshot.push({
+                            guid: checkedObject.guid,
+                            name: checkedObject.name,
+                            reason: "DIAGRAM_NOT_IN_METAMODEL",
+                            issues: diagramIssues
+                        });
+                        break;
+                    }
+				}
+			}
+
+			artifactGuids.sort();
+			diagramGuids.sort();
+
+			snapshot.content = {
+				artifacts: artifactGuids,
+				diagrams: diagramGuids,
+                diagramsWithoutSnapshot: diagramsWithoutSnapshot
+			};
+
+			snapshot.metrics =
+				checkResult.metrics || this._createCheckMetrics();
+		}
+
+		var json =
+			JSON.stringify(snapshot);
+
+		var success =
+			addin.repositoryService.setTaggedValueMemo(
+				targetElement,
+				addin.fbaConstants.TAG_CHECK_RESULT,
+				json
+			);
+
+		if (!success)
+			return false;
+
+		var persistedJson =
+			addin.repositoryService.getTaggedValueMemo(
+				targetElement,
+				addin.fbaConstants.TAG_CHECK_RESULT
+			);
+
+		var identical =
+			persistedJson === json;
+
+		addin.logger.info(
+			"Vérification CHECK objet"
+			+ " | Type=" + snapshot.scope
+			+ " | Name=" + snapshot.object.name
+			+ " | GUID=" + snapshot.object.guid
+			+ " | ExpectedSize=" + json.length
+			+ " | PersistedSize="
+			+ (persistedJson ? persistedJson.length : 0)
+			+ " | Identical=" + identical
+		);
+
+		if (!identical)
+		{
+			addin.logger.error(
+				"Persistance CHECK objet incomplète"
+				+ " | Type=" + snapshot.scope
+				+ " | Name=" + snapshot.object.name
+				+ " | GUID=" + snapshot.object.guid
+			);
+
+			return false;
+		}
+
+		if (!addin.frameworkBA._setCheckRequired(targetElement, false))
+        {
+            addin.logger.error("Indicateur CHECK non réinitialisé | GUID=" + objectGuid);
+            return false;
+        }
+
+		addin.logger.info(
+			"CHECK objet persisté"
+			+ " | Type=" + snapshot.scope
+			+ " | Name=" + snapshot.object.name
+			+ " | GUID=" + snapshot.object.guid
+			+ " | Status=" + snapshot.status
+			+ " | SourceHash=" + snapshot.sourceHash
+			+ " | Size=" + json.length
+		);
+
+		return true;
+	},
+
+
+	loadCheckResult: function(object)
+	{
+		if (!object)
+			return null;
+
+		var targetElement = null;
+
+		if (!addin.utils.isEmpty(object.ElementGUID))
+		{
+			targetElement = object;
+		}
+		else if (
+			!addin.utils.isEmpty(object.PackageGUID) &&
+			object.Element
+		)
+		{
+			targetElement = object.Element;
+		}
+
+		if (!targetElement)
+			return null;
+
+		try
+		{
+			var json =
+				addin.repositoryService.getTaggedValueMemo(
+					targetElement,
+					addin.fbaConstants.TAG_CHECK_RESULT
+				);
+
+			if (addin.utils.isEmpty(json))
+				return null;
+
+			return JSON.parse(json);
+		}
+		catch (e)
+		{
+			addin.logger.error(
+				"Erreur lecture résultat CHECK objet"
+				+ " | Error=" + e.message
+			);
+
+			return null;
+		}
+	},
+
+
+	_persistCheckSnapshot: function(object, checkResult)
+    {
+        var previous = addin.checkInvalidationSuppressed;
+        addin.checkInvalidationSuppressed = true;
+        try
+        {
+            return this._persistCheckSnapshotWithoutInvalidation(object, checkResult);
+        }
+        finally
+        {
+            addin.checkInvalidationSuppressed = previous;
+        }
+    },
+
+    _persistCheckSnapshotWithoutInvalidation: function(
 		rootPackage,
 		checkResult
 	)
@@ -12144,6 +12856,15 @@ return {
 
 				return false;
 			}
+
+			// Older runtime callers can omit checkedAt. Persist a usable ROOT date.
+            if (checkResult.scope === "ROOT" &&
+                (typeof checkResult.checkedAt !== "string" || !checkResult.checkedAt.replace(/\s/g, "")))
+            {
+                checkResult.checkedAt = addin.utils.formatFrenchDateTime(new Date());
+                if (typeof checkResult.checkedAt !== "string" || !checkResult.checkedAt.replace(/\s/g, ""))
+                    throw new Error("Date CHECK ROOT indisponible.");
+            }
 
 			var json =
 				JSON.stringify(
@@ -12184,6 +12905,14 @@ return {
 				+ " | PersistedSize=" + persistedJson.length
 				+ " | Identical=" + (persistedJson === json)
 			);
+
+			if (persistedJson !== json)
+                return false;
+
+            // Un CHECK de package ne réinitialise jamais le root.
+            if (checkResult.scope === "ROOT" && checkResult.success &&
+                !addin.frameworkBA._setCheckRequired(rootElement, false))
+                return false;
 
 			addin.logger.info(
 				"Snapshot CHECK persisté"
@@ -15679,6 +16408,8 @@ return {
 								analysisPackage.PackageGUID
 							);
 
+						
+
 
 						diagramCheckResult.diagram.guid =
 							generatedDiagram.DiagramGUID;
@@ -16180,6 +16911,8 @@ return {
 									analysisPackage.PackageGUID
 								);
 
+							
+
 
 							addin.logger.info(
 								"TEST CHECK DIAGRAM BRANCH"
@@ -16475,6 +17208,14 @@ return {
 
 						// Tous les diagrammes correspondants ont été contrôlés.
 						// On passe à la définition de diagramme suivante.
+						continue;
+					}
+
+
+					// Un diagramme enregistré couvre déjà cette définition.
+					// Les diagrammes analyste compatibles ont aussi été contrôlés.
+					if (generatedDiagrams && generatedDiagrams.length > 0)
+					{
 						continue;
 					}
 
@@ -16946,6 +17687,229 @@ return {
 
 
 		// =====================================================
+		// PERSISTANCE DISTRIBUEE - ARTEFACTS
+		//
+		// Première étape de la migration : le résultat global
+		// reste inchangé, mais chaque artefact contrôlé reçoit
+		// également son propre snapshot CHECK.
+		// =====================================================
+
+		for (var checkedObjectGuid in result.objects)
+		{
+			if (!result.objects.hasOwnProperty(checkedObjectGuid))
+				continue;
+
+			var checkedObject =
+				result.objects[checkedObjectGuid];
+
+			if (
+				!checkedObject ||
+				checkedObject.objectType != "ARTIFACT"
+			)
+			{
+				continue;
+			}
+
+			var checkedArtifact =
+				addin.repositoryService.getElementByGuid(
+					checkedObject.guid
+				);
+
+			if (!checkedArtifact)
+			{
+				result.success = false;
+
+				addin.logger.error(
+					"Persistance CHECK artefact impossible"
+					+ " | GUID=" + checkedObject.guid
+				);
+
+				continue;
+			}
+
+			// Le CHECK de ce package ne remplace pas le résultat local
+			// d'un artefact appartenant à un autre package.
+			if (checkedArtifact.PackageID != analysisPackage.PackageID)
+			{
+				addin.logger.info(
+					"Snapshot artefact externe préservé"
+					+ " | Artifact=" + checkedArtifact.Name
+					+ " | GUID=" + checkedArtifact.ElementGUID
+				);
+				continue;
+			}
+
+			if (
+				!this.persistCheckResult(
+					checkedArtifact,
+					result
+				)
+			)
+			{
+				result.success = false;
+
+				addin.logger.error(
+					"Persistance CHECK artefact échouée"
+					+ " | Artifact=" + checkedArtifact.Name
+					+ " | GUID=" + checkedArtifact.ElementGUID
+				);
+			}
+		}
+
+
+		// =====================================================
+		// RESOLUTION DGC D'INSTANCE - DIAGRAMMES RECONNUS
+		// ETNIC_Generated_Diagram_GUID = DiagramGUID.
+		// =====================================================
+
+		var checkDiagramRegistryPackage =
+			this._resolveDiagramRegistryPackage(
+				rootPackage
+			);
+
+		for (var storageDiagramGuid in result.objects)
+		{
+			if (!result.objects.hasOwnProperty(storageDiagramGuid))
+				continue;
+
+			var storageDiagramObject =
+				result.objects[storageDiagramGuid];
+
+			if (
+				!storageDiagramObject ||
+				storageDiagramObject.objectType != "DIAGRAM" ||
+				!recognizedDiagramGuids[addin.utils.normalizeGuid(storageDiagramObject.guid)]
+			)
+			{
+				continue;
+			}
+
+			var storageDiagram =
+				addin.repositoryService.getDiagramByGuid(
+					storageDiagramObject.guid
+				);
+
+			if (!storageDiagram)
+				continue;
+
+			var diagramRegistryEntry =
+				this._findDiagramRegistryEntryByGeneratedGuid(
+					checkDiagramRegistryPackage,
+					storageDiagram.DiagramGUID
+				);
+
+			if (diagramRegistryEntry)
+			{
+				storageDiagramObject.checkStorageGuid =
+					diagramRegistryEntry.ElementGUID;
+
+				addin.logger.info(
+					"DGC d'instance résolu"
+					+ " | Diagram=" + storageDiagram.Name
+					+ " | DiagramGUID=" + storageDiagram.DiagramGUID
+					+ " | DGC=" + diagramRegistryEntry.Name
+					+ " | DGCGUID=" + diagramRegistryEntry.ElementGUID
+				);
+
+				continue;
+			}
+
+			var diagramRegistryMissingIssue =
+			{
+				code:
+					addin.fbaConstants
+						.CHECK_ISSUE_DIAGRAM_REGISTRY_MISSING,
+
+				severity:
+					addin.fbaConstants
+						.CHECK_SEVERITY_ERROR,
+
+				action:
+					addin.fbaConstants
+						.CHECK_ACTION_REPAIR,
+
+				objectType:
+					"DIAGRAM",
+
+				objectGuid:
+					storageDiagram.DiagramGUID,
+
+				objectName:
+					storageDiagram.Name,
+
+				packageGuid:
+					analysisPackage.PackageGUID,
+
+				message:
+					"Le diagramme reconnu par le métamodèle "
+					+ "ne possède pas de DGC d'instance associé "
+					+ "par ETNIC_Generated_Diagram_GUID."
+			};
+
+			this._registerCheckIssue(
+				result,
+				diagramRegistryMissingIssue
+			);
+
+			addin.logger.warning(
+				"DGC d'instance manquant"
+				+ " | Diagram=" + storageDiagram.Name
+				+ " | DiagramGUID=" + storageDiagram.DiagramGUID
+				+ " | Action=REPAIR"
+			);
+		}
+
+
+		// =====================================================
+		// PERSISTANCE DISTRIBUEE - DIAGRAMMES RECONNUS
+		// Le DGC d'instance porte le snapshot du diagramme.
+		// =====================================================
+
+		for (var checkedDiagramGuid in result.objects)
+		{
+			if (!result.objects.hasOwnProperty(checkedDiagramGuid))
+				continue;
+
+			var checkedDiagramObject =
+				result.objects[checkedDiagramGuid];
+
+			if (
+				!checkedDiagramObject ||
+				checkedDiagramObject.objectType != "DIAGRAM" ||
+				addin.utils.isEmpty(checkedDiagramObject.checkStorageGuid)
+			)
+			{
+				continue;
+			}
+
+			var checkedDiagram =
+				addin.repositoryService.getDiagramByGuid(
+					checkedDiagramObject.guid
+				);
+
+			if (!checkedDiagram)
+			{
+				result.success = false;
+				addin.logger.error(
+					"Persistance CHECK diagramme impossible"
+					+ " | GUID=" + checkedDiagramObject.guid
+				);
+				continue;
+			}
+
+			if (!this.persistCheckResult(checkedDiagram, result))
+			{
+				result.success = false;
+				addin.logger.error(
+					"Persistance CHECK diagramme échouée"
+					+ " | Diagram=" + checkedDiagram.Name
+					+ " | GUID=" + checkedDiagram.DiagramGUID
+				);
+			}
+		}
+
+
+		// =====================================================
 		// STATUT DE CONFORMITE DU PACKAGE
 		// =====================================================
 
@@ -16969,6 +17933,22 @@ return {
 		{
 			result.metrics.packages
 				.compliant++;
+		}
+
+
+		// =====================================================
+		// PERSISTANCE DISTRIBUEE - PACKAGE
+		// =====================================================
+
+		if (!this.persistCheckResult(analysisPackage, result))
+		{
+			result.success = false;
+
+			addin.logger.error(
+				"Persistance CHECK package échouée"
+				+ " | Package=" + analysisPackage.Name
+				+ " | GUID=" + analysisPackage.PackageGUID
+			);
 		}
 
 
@@ -17082,6 +18062,98 @@ return {
 	},
 
 		
+    _checkRootDirectContent: function(root, result)
+    {
+        var config = addin.fbaConstants.ANALYSIS_ROOT_CONTENT;
+        if (!config) throw new Error("Configuration ANALYSIS_ROOT_CONTENT absente.");
+        var definitions = this._getOperationDefinitions(), known = {};
+        function key(value) { return String(value || "").replace(/[{}]/g, "").toUpperCase(); }
+        for (var d = 0; d < definitions.length; d++) known[key(definitions[d].guid || definitions[d].prototypeGuid)] = true;
+        var self = this, foreign = 0, homeCount = 0, libraryCount = 0;
+        function issue(code, message, type, guid, name) {
+            foreign++;
+            self._registerCheckIssue(result, {
+                code: code, severity: "ERROR", action: "MANUAL_REVIEW",
+                scope: "LOCAL", scopeType: "ANALYSIS_ROOT", scopeGuid: root.PackageGUID,
+                objectType: "PACKAGE", objectGuid: root.PackageGUID, objectName: root.Name,
+                affectedObjectType: type, affectedObjectGuid: guid || "", affectedObjectName: name || "",
+                message: message
+            });
+        }
+        for (var p = 0; p < root.Packages.Count; p++) {
+            var pkg = root.Packages.GetAt(p);
+            if (String(pkg.Name) === config.libraryName) { libraryCount++; continue; }
+            var source = pkg.Element ? addin.repositoryService.getTaggedValue(
+                pkg.Element, addin.fbaConstants.TAG_SOURCE_ANALYSIS_ELEMENT_GUID) : "";
+            if (!source || !known[key(source)])
+                issue("ROOT_FOREIGN_PACKAGE", "Package non autorise directement dans le dossier d'analyse : " + pkg.Name,
+                    "PACKAGE", pkg.PackageGUID, pkg.Name);
+        }
+        if (libraryCount > 1)
+            issue("ROOT_LIBRARY_DUPLICATE", "Plusieurs packages " + config.libraryName + " dans le ROOT.", "PACKAGE", "", config.libraryName);
+        for (var e = 0; e < root.Elements.Count; e++) {
+            var element = root.Elements.GetAt(e);
+            issue("ROOT_FOREIGN_ELEMENT", "Element non autorise directement dans le dossier d'analyse : " + element.Name,
+                "ARTIFACT", element.ElementGUID, element.Name);
+        }
+        for (var i = 0; i < root.Diagrams.Count; i++) {
+            var diagram = root.Diagrams.GetAt(i);
+            var match = /(?:^|;)MDGDgm=([^;]*)/.exec(String(diagram.StyleEx || ""));
+            var mdg = match ? match[1] : String(diagram.MetaType || "");
+            if (String(diagram.Name) === config.homeDiagramName &&
+                String(diagram.Type) === config.homeDiagramType &&
+                mdg === config.homeDiagramMetaType) { homeCount++; continue; }
+            issue("ROOT_FOREIGN_DIAGRAM", "Diagramme non autorise directement dans le dossier d'analyse : " + diagram.Name,
+                "DIAGRAM", diagram.DiagramGUID, diagram.Name);
+        }
+        if (!homeCount)
+            issue("ROOT_HOME_DIAGRAM_MISSING", "Diagramme attendu absent : " + config.homeDiagramName
+                + " (" + config.homeDiagramMetaType + ").", "DIAGRAM", "", config.homeDiagramName);
+        if (homeCount > 1)
+            issue("ROOT_HOME_DIAGRAM_DUPLICATE", "Plusieurs diagrammes Accueil conformes dans le ROOT.", "DIAGRAM", "", config.homeDiagramName);
+        result.ruleResults.push(this._createCheckRuleResult(
+            "ROOT_DIRECT_CONTENT", "LOCAL", "ANALYSIS_ROOT", root.PackageGUID, "PACKAGE", "", root.PackageGUID, "",
+            config, { invalidItems: foreign, homeDiagrams: homeCount, libraries: libraryCount }, foreign === 0));
+    },
+
+    _buildCompactRootCheckSnapshot: function(rootPackage, result, packageIssues, packageRules, packageGuids)
+    {
+        function key(value) { return String(value || "").replace(/[{}]/g, "").toUpperCase(); }
+        function containsIdentity(list, value) {
+            for (var i = 0; i < list.length; i++) if (list[i] === value) return true;
+            return false;
+        }
+        var issues = [], rules = [], globalIssues = [], localIssues = [];
+        for (var i = 0; i < result.issues.length; i++) {
+            var issue = result.issues[i];
+            if (containsIdentity(packageIssues, issue)) continue;
+            issues.push(issue);
+            if (issue.scope === "GLOBAL") globalIssues.push(issues.length - 1);
+            else localIssues.push(issues.length - 1);
+        }
+        for (var r = 0; r < result.ruleResults.length; r++)
+            if (!containsIdentity(packageRules, result.ruleResults[r])) rules.push(result.ruleResults[r]);
+        var summary = { errors: 0, warnings: 0, init: 0, complete: 0, repair: 0,
+            manualComplete: 0, manualRemove: 0, manualMove: 0,
+            makeTechnical: 0, makeBusiness: 0, manualReview: 0 };
+        for (var n = 0; n < issues.length; n++) this._incrementCheckSummary(summary, issues[n]);
+        var date = result.checkedAt;
+        if (typeof date !== "string" || !date.replace(/\s/g, ""))
+            date = addin.utils.formatFrenchDateTime(new Date());
+        if (typeof date !== "string" || !date.replace(/\s/g, ""))
+            throw new Error("Date CHECK ROOT indisponible.");
+        return {
+            schemaVersion: 2, storage: "DISTRIBUTED", scope: "ROOT",
+            success: result.success, checkedAt: date,
+            rootGuid: rootPackage.PackageGUID, rootName: rootPackage.Name,
+            issues: issues, ruleResults: rules, summary: summary,
+            analysisSummary: result.summary,
+            metrics: result.metrics,
+            content: { packages: packageGuids },
+            issuePartitions: { local: localIssues, global: globalIssues }
+        };
+    },
+
 	checkAnalysis: function(rootPackage)
 	{
 		var result = {
@@ -17147,6 +18219,9 @@ return {
 
 
 		// =========================================================
+        // Track provenance by identity; package-local results are already persisted individually.
+        var packageIssues = [], packageRules = [], packageGuids = [];
+
 		// 0. CONTEXTE
 		// =========================================================
 
@@ -17170,6 +18245,8 @@ return {
 
 
 		// =========================================================
+        this._checkRootDirectContent(rootPackage, result);
+
 		// 1. PACKAGES
 		// =========================================================
 
@@ -17281,6 +18358,7 @@ return {
 				);
 
 
+            packageGuids.push(currentPackage.PackageGUID);
 			result.summary.packagesChecked++;
 
 
@@ -17328,6 +18406,7 @@ return {
 					j++
 				)
 				{
+                    packageIssues.push(packageResult.issues[j]);
 					result.issues.push(
 						packageResult.issues[j]
 					);
@@ -17346,6 +18425,7 @@ return {
 					r++
 				)
 				{
+                    packageRules.push(packageResult.ruleResults[r]);
 					result.ruleResults.push(
 						packageResult.ruleResults[r]
 					);
@@ -17653,11 +18733,10 @@ return {
 		// 4. PERSISTENCE DU SNAPSHOT CHECK
 		// =========================================================
 
-		var snapshotPersisted =
-			this._persistCheckSnapshot(
-				rootPackage,
-				result
-			);
+        var compactSnapshot = this._buildCompactRootCheckSnapshot(
+            rootPackage, result, packageIssues, packageRules, packageGuids);
+        result.checkedAt = compactSnapshot.checkedAt;
+        var snapshotPersisted = this._persistCheckSnapshot(rootPackage, compactSnapshot);
 
 		if (!snapshotPersisted)
 		{
@@ -17729,13 +18808,11 @@ return {
 
 		if (initializationState == "INITIALIZED")
 		{
-			addin.logger.info(
-				"REPAIR non nécessaire"
-				+ " | Package=" + analysisPackage.Name
-				+ " | State=INITIALIZED"
-				+ " | Action=SKIP"
-			);
-
+			if (!this._repairDiagramRegistryEntries(analysisRoot, analysisPackage, diagramRegistryIndex))
+			{
+				addin.logger.error("REPAIR DGC en échec | Package=" + analysisPackage.Name);
+				return false;
+			}
 			return true;
 		}
 
