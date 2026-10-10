@@ -37,9 +37,10 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
         return "";
     }
     function buildSqlIndex(rootGuid, root, repo, tagName, output) {
+        var startedAt = new Date().getTime();
         var packageIds = [], elementIds = [], seenPackages = {};
         var index = { rootGuid: rootGuid, tagName: tagName, entries: [], carriers: {},
-            packages: 0, reads: 0, mode: "SQL", queries: 1 };
+            packages: 0, reads: 0, mode: "SQL", queries: 1, packageInfo: {} };
         function id(value) {
             var n = Number(value);
             if (!isFinite(n) || n <= 0 || Math.floor(n) !== n) throw new Error("Identifiant EA invalide pour indexation SQL.");
@@ -50,18 +51,24 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
             if (seenPackages[packageId]) throw new Error("Package duplique pendant indexation SQL.");
             seenPackages[packageId] = true;
             packageIds.push(packageId);
-            elementIds.push(id(pkg.Element.ElementID));
+            var element = pkg.Element;
+            elementIds.push(id(element.ElementID));
+            index.packageInfo[guidKey(pkg.PackageGUID)] = { Name: String(pkg.Name), carrierName: String(element.Name) };
             index.packages++;
             var children = pkg.Packages, length = children.Count;
             for (var i = 0; i < length; i++) visit(children.GetAt(i));
         }
         visit(root);
+        var traversedAt = new Date().getTime();
+        output("Temps index | Parcours packages ms=" + (traversedAt - startedAt));
         output("Indexation SQL | Packages=" + index.packages + " | Lecture groupee des tags CHECK");
         var query = "SELECT o.ea_guid AS CarrierGuid, o.Name AS CarrierName, tv.Value AS CheckValue, tv.Notes AS CheckNotes "
             + "FROM t_object o INNER JOIN t_objectproperties tv ON tv.Object_ID = o.Object_ID "
             + "WHERE tv.Property = '" + String(tagName).replace(/'/g, "''") + "' AND (o.Package_ID IN ("
             + packageIds.join(",") + ") OR o.Object_ID IN (" + elementIds.join(",") + "))";
         var xml = String(repo.SQLQuery(query));
+        var queriedAt = new Date().getTime();
+        output("Temps index | Requete SQL ms=" + (queriedAt - traversedAt));
         if (!/<EADATA(?:\s|>)/i.test(xml) || !/<Dataset_0(?:\s|>|\/)/i.test(xml))
             throw new Error("Reponse SQL CHECK invalide; aucune mise a jour effectuee.");
         var rows = /<Row(?:\s[^>]*)?>([\s\S]*?)<\/Row>/gi, row;
@@ -77,6 +84,7 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
             try { index.entries.push({ snapshot: JSON.parse(raw), carrierName: carrierName }); }
             catch (error) { throw new Error("JSON CHECK invalide sur " + carrierName + ": " + error.message); }
         }
+        output("Temps index | Decodage XML et JSON ms=" + (new Date().getTime() - queriedAt));
         output("Index pret | Mode=SQL | Packages parcourus=" + index.packages + " | Supports lus=" + index.reads
             + " | Snapshots=" + index.entries.length + " | Requetes=1");
         return index;
@@ -223,28 +231,30 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
                 visitPackage(pkg.Packages.GetAt(p));
         }
 
-        var target = repository.GetPackageByGuid(packageGuid);
-        var root = repository.GetPackageByGuid(rootGuid);
-        if (!target || !root)
-            throw new Error("Package cible ou dossier racine introuvable.");
-
-        // Do not silently collect from an unrelated analysis root.
-        var ancestor = target;
-        var insideRoot = false;
-        while (ancestor) {
-            if (guidKey(ancestor.PackageGUID) === guidKey(root.PackageGUID)) {
-                insideRoot = true;
-                break;
-            }
-            if (!ancestor.ParentID) break;
-            ancestor = repository.GetPackageByID(ancestor.ParentID);
-        }
-        if (!insideRoot)
-            throw new Error("Le package cible ne se trouve pas dans la racine fournie.");
-
         var index = options.index;
         if (index && (guidKey(index.rootGuid) !== guidKey(rootGuid) || index.tagName !== tagName))
             throw new Error("Index CHECK d'une autre racine ou d'un autre tag.");
+        // SQL index records only packages reached from this root. Reuse that
+        // membership proof and plain names instead of reopening every EA package.
+        var target, carrierName;
+        if (index && index.packageInfo) {
+            target = index.packageInfo[guidKey(packageGuid)];
+            if (!target) throw new Error("Le package cible ne se trouve pas dans la racine fournie.");
+            carrierName = target.carrierName;
+        } else {
+            target = repository.GetPackageByGuid(packageGuid);
+            var root = repository.GetPackageByGuid(rootGuid);
+            if (!target || !root) throw new Error("Package cible ou dossier racine introuvable.");
+            var ancestor = target, insideRoot = false;
+            while (ancestor) {
+                if (guidKey(ancestor.PackageGUID) === guidKey(root.PackageGUID)) { insideRoot = true; break; }
+                if (!ancestor.ParentID) break;
+                ancestor = repository.GetPackageByID(ancestor.ParentID);
+            }
+            if (!insideRoot) throw new Error("Le package cible ne se trouve pas dans la racine fournie.");
+            carrierName = String(target.Element.Name);
+        }
+
         var packageSnapshot = null;
         if (index) {
             for (var ix = 0; ix < index.entries.length; ix++) {
@@ -285,7 +295,7 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
         }
         output("Package=" + target.Name + " | Date=" + packageSnapshot.checkedAt
             + " | Artefacts=" + artifacts.length + " | Diagrammes=" + diagrams.length);
-        accept(packageSnapshot, target.Element.Name);
+        accept(packageSnapshot, carrierName);
         if (index) {
             for (var ie = 0; ie < index.entries.length; ie++)
                 accept(index.entries[ie].snapshot, index.entries[ie].carrierName);
