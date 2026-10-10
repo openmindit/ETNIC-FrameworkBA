@@ -13,6 +13,75 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
     }
 
 
+    // SQLQuery returns XML; decode exactly once so JSON text such as "&lt;"
+    // remains unchanged. CDATA and numeric entities are supported as well.
+    function xmlText(value) {
+        var parts = String(value).split(/(<!\[CDATA\[[\s\S]*?\]\]>)/g), out = "";
+        for (var i = 0; i < parts.length; i++) {
+            if (parts[i].indexOf("<![CDATA[") === 0) out += parts[i].slice(9, -3);
+            else out += parts[i].replace(/&(#x[0-9a-f]+|#[0-9]+|amp|lt|gt|quot|apos);/gi, function (_, entity) {
+                var names = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+                if (entity.charAt(0) !== "#") return names[entity.toLowerCase()];
+                var n = entity.charAt(1).toLowerCase() === "x" ? parseInt(entity.slice(2), 16) : parseInt(entity.slice(1), 10);
+                if (n <= 65535) return String.fromCharCode(n);
+                n -= 65536;
+                return String.fromCharCode(55296 + (n >> 10), 56320 + (n & 1023));
+            });
+        }
+        return out;
+    }
+    function sqlField(row, name, required) {
+        var match = new RegExp("<" + name + "(?:\\s[^>]*)?>([\\s\\S]*?)</" + name + ">", "i").exec(row);
+        if (match) return xmlText(match[1]);
+        if (required) throw new Error("Colonne SQL CHECK absente: " + name);
+        return "";
+    }
+    function buildSqlIndex(rootGuid, root, repo, tagName, output) {
+        var packageIds = [], elementIds = [], seenPackages = {};
+        var index = { rootGuid: rootGuid, tagName: tagName, entries: [], carriers: {},
+            packages: 0, reads: 0, mode: "SQL", queries: 1 };
+        function id(value) {
+            var n = Number(value);
+            if (!isFinite(n) || n <= 0 || Math.floor(n) !== n) throw new Error("Identifiant EA invalide pour indexation SQL.");
+            return n;
+        }
+        function visit(pkg) {
+            var packageId = id(pkg.PackageID);
+            if (seenPackages[packageId]) throw new Error("Package duplique pendant indexation SQL.");
+            seenPackages[packageId] = true;
+            packageIds.push(packageId);
+            elementIds.push(id(pkg.Element.ElementID));
+            index.packages++;
+            var children = pkg.Packages, length = children.Count;
+            for (var i = 0; i < length; i++) visit(children.GetAt(i));
+        }
+        visit(root);
+        output("Indexation SQL | Packages=" + index.packages + " | Lecture groupee des tags CHECK");
+        var query = "SELECT o.ea_guid AS CarrierGuid, o.Name AS CarrierName, tv.Value AS CheckValue, tv.Notes AS CheckNotes "
+            + "FROM t_object o INNER JOIN t_objectproperties tv ON tv.Object_ID = o.Object_ID "
+            + "WHERE tv.Property = '" + String(tagName).replace(/'/g, "''") + "' AND (o.Package_ID IN ("
+            + packageIds.join(",") + ") OR o.Object_ID IN (" + elementIds.join(",") + "))";
+        var xml = String(repo.SQLQuery(query));
+        if (!/<EADATA(?:\s|>)/i.test(xml) || !/<Dataset_0(?:\s|>|\/)/i.test(xml))
+            throw new Error("Reponse SQL CHECK invalide; aucune mise a jour effectuee.");
+        var rows = /<Row(?:\s[^>]*)?>([\s\S]*?)<\/Row>/gi, row;
+        while ((row = rows.exec(xml)) !== null) {
+            var carrierGuid = sqlField(row[1], "CarrierGuid", true);
+            var carrierName = sqlField(row[1], "CarrierName", false);
+            var key = guidKey(carrierGuid);
+            if (!key) throw new Error("GUID support SQL CHECK vide.");
+            if (!index.carriers[key]) { index.carriers[key] = true; index.reads++; }
+            var raw = sqlField(row[1], "CheckValue", false);
+            if (raw === "<memo>" || raw === "") raw = sqlField(row[1], "CheckNotes", false);
+            if (/^\s*$/.test(raw)) continue;
+            try { index.entries.push({ snapshot: JSON.parse(raw), carrierName: carrierName }); }
+            catch (error) { throw new Error("JSON CHECK invalide sur " + carrierName + ": " + error.message); }
+        }
+        output("Index pret | Mode=SQL | Packages parcourus=" + index.packages + " | Supports lus=" + index.reads
+            + " | Snapshots=" + index.entries.length + " | Requetes=1");
+        return index;
+    }
+
     // Execution-local index: one COM traversal and one read per carrier.
     function buildIndex(rootGuid, options) {
         options = options || {};
@@ -21,6 +90,8 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
         if (!root) throw new Error("Racine introuvable pour indexation.");
         var tagName = options.tagName || "ETNIC_Check_Result";
         var output = options.output || function () {};
+        if (options.useSql !== false && typeof repo.SQLQuery !== "undefined")
+            return buildSqlIndex(rootGuid, root, repo, tagName, output);
         var index = { rootGuid: rootGuid, tagName: tagName, entries: [], carriers: {},
             packages: 0, reads: 0 };
         function read(element) {
@@ -301,3 +372,4 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
 
     return { collect: collect, buildIndex: buildIndex };
 })();
+
