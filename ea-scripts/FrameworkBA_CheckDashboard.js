@@ -120,8 +120,33 @@ var FrameworkBA_CheckDashboard = (function () {
             ["_Summary_Foreign_Value", value(c.foreign)]
         ];
     }
+
+    function indexDiagram(diagram, repository) {
+        var byName = {}, seen = {}, reads = 0;
+        var objects = diagram.DiagramObjects;
+        var total = objects.Count;
+        for (var i = 0; i < total; i++) {
+            var id = objects.GetAt(i).ElementID;
+            if (seen["$" + id]) continue;
+            seen["$" + id] = true;
+            var element = repository.GetElementByID(id);
+            reads++;
+            if (!element) continue;
+            var name = "$" + String(element.Name);
+            if (!Object.prototype.hasOwnProperty.call(byName, name)) byName[name] = [];
+            byName[name].push(element);
+        }
+        return { reads: reads, find: function (name) {
+            var targets = byName["$" + name];
+            if (!targets || !targets.length) throw new Error("Cible absente du diagramme: " + name);
+            if (targets.length !== 1) throw new Error("Plusieurs cibles portent le nom " + name);
+            return targets[0];
+        } };
+    }
+
     function refresh(diagram, options) {
         options = options || {};
+        var started = new Date().getTime();
         var repo = options.repository || Repository;
         var log = options.output || function (m) { repo.WriteOutput("ETNIC_FrameworkBA", "[CHECK DASHBOARD] " + m, 0); };
         var config = readConfiguration(diagram, repo);
@@ -130,6 +155,7 @@ var FrameworkBA_CheckDashboard = (function () {
             repository: repo, diagramGuidsWithoutSnapshot: config.withoutSnapshot,
             output: function (m) { repo.WriteOutput("ETNIC_FrameworkBA", "[CHECK COLLECT] " + m, 0); }
         });
+        log("Temps | Collecte ms=" + (new Date().getTime() - started));
         var writer = FrameworkBA_CheckChartWriter;
         var classifyOptions = { foreignDiagramGuids: config.foreignDiagrams };
         var definitions = [
@@ -166,7 +192,9 @@ var FrameworkBA_CheckDashboard = (function () {
         if (!targetSnapshot || !targetSnapshot.content) throw new Error("Contenu du snapshot cible absent.");
         texts.push(["_Summary_Scope", "Périmètre : 1 package • " + targetSnapshot.content.artifacts.length + " artefacts • " + targetSnapshot.content.diagrams.length + " diagrammes"]);
         }
-        function find(name) { return FrameworkBA_CheckTableWriter.findOnDiagram(diagram, name, repo); }
+        var targetsIndex = indexDiagram(diagram, repo);
+        log("Cibles indexees | Elements lus=" + targetsIndex.reads);
+        function find(name) { return targetsIndex.find(name); }
         var table = find("_Detail_Table"), charts = [], textTargets = [];
         for (var i = 0; i < definitions.length; i++) {
             var chart = find(definitions[i][0]);
@@ -181,6 +209,7 @@ var FrameworkBA_CheckDashboard = (function () {
                 throw new Error("Text ou Note attendu: " + text.Name);
             textTargets.push(text);
         }
+        log("Temps | Collecte et preparation ms=" + (new Date().getTime() - started));
         // All payloads and targets resolved before the first write.
         var tableUpdate = FrameworkBA_CheckTableWriter.write(table.ElementGUID, config.scope === "ANALYSIS" ? { issues: result.detailIssues, summary: { missing: 0 }, emptyMessage: "Aucune anomalie globale interpackages." } : result, { repository: repo, refresh: false, output: log });
         var chartsChanged = 0, textsChanged = 0;
@@ -195,17 +224,12 @@ var FrameworkBA_CheckDashboard = (function () {
             if (!reread || String(reread.Notes) !== content) throw new Error("Texte non persiste: " + e.Name);
             textsChanged++;
         }
-        if (tableUpdate.changed) repo.AdviseElementChange(table.ElementID);
-        // Opt-in for NORMAL test scripts only. Never reload inside Scriptlet refresh.
-        if (options.notifyCharts === true) {
-            for (var nc = 0; nc < charts.length; nc++) {
-                log("Notification graphique | Nom=" + charts[nc].Name);
-                repo.AdviseElementChange(charts[nc].ElementID);
-            }
-            log("Notifications graphiques terminees=" + charts.length);
-        }
+        // No element notifications here: EA can re-execute Scriptlets on each one.
+        // The NORMAL driver performs one diagram reload after all writes.
+        log("Temps | Total ms=" + (new Date().getTime() - started));
         log("Fin | Graphiques prepares=" + charts.length + " | Graphiques modifies=" + chartsChanged + " | Textes modifies=" + textsChanged);
         return { result: result, chartsChanged: chartsChanged, textsChanged: textsChanged };
     }
-    return { analysisView: analysisView, readConfiguration: readConfiguration, buildSummary: summary, refresh: refresh };
+    return { indexDiagram: indexDiagram, analysisView: analysisView, readConfiguration: readConfiguration, buildSummary: summary, refresh: refresh };
 })();
+
