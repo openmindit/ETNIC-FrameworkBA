@@ -40,25 +40,45 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
         var startedAt = new Date().getTime();
         var packageIds = [], elementIds = [], seenPackages = {};
         var index = { rootGuid: rootGuid, tagName: tagName, entries: [], carriers: {},
-            packages: 0, reads: 0, mode: "SQL", queries: 1, packageInfo: {} };
+            packages: 0, reads: 0, mode: "SQL", queries: 2, packageInfo: {} };
         function id(value) {
             var n = Number(value);
             if (!isFinite(n) || n <= 0 || Math.floor(n) !== n) throw new Error("Identifiant EA invalide pour indexation SQL.");
             return n;
         }
-        function visit(pkg) {
-            var packageId = id(pkg.PackageID);
-            if (seenPackages[packageId]) throw new Error("Package duplique pendant indexation SQL.");
-            seenPackages[packageId] = true;
-            packageIds.push(packageId);
-            var element = pkg.Element;
-            elementIds.push(id(element.ElementID));
-            index.packageInfo[guidKey(pkg.PackageGUID)] = { Name: String(pkg.Name), carrierName: String(element.Name) };
-            index.packages++;
-            var children = pkg.Packages, length = children.Count;
-            for (var i = 0; i < length; i++) visit(children.GetAt(i));
+        // Read the hierarchy once; no pkg.Packages or child pkg.Element COM calls.
+        var hierarchyXml = String(repo.SQLQuery("SELECT Package_ID AS PackageId, Parent_ID AS ParentId, ea_guid AS PackageGuid, Name AS PackageName FROM t_package"));
+        if (!/<EADATA(?:\s|>)/i.test(hierarchyXml) || !/<Dataset_0(?:\s|>|\/)/i.test(hierarchyXml))
+            throw new Error("Reponse SQL CHECK invalide pour la structure des packages.");
+        var hierarchyRows = /<Row(?:\s[^>]*)?>([\s\S]*?)<\/Row>/gi, hierarchyRow;
+        var byId = {}, childrenByParent = {};
+        while ((hierarchyRow = hierarchyRows.exec(hierarchyXml)) !== null) {
+            var row = hierarchyRow[1], packageId = id(sqlField(row, "PackageId", true));
+            var parentId = Number(sqlField(row, "ParentId", true));
+            if (!isFinite(parentId) || parentId < 0 || Math.floor(parentId) !== parentId || byId[packageId])
+                throw new Error("Structure SQL des packages incoherente.");
+            var info = { packageId: packageId, guid: sqlField(row, "PackageGuid", true), Name: sqlField(row, "PackageName", false) };
+            if (!guidKey(info.guid)) throw new Error("GUID package SQL vide.");
+            byId[packageId] = info;
+            if (!childrenByParent[parentId]) childrenByParent[parentId] = [];
+            childrenByParent[parentId].push(info);
         }
-        visit(root);
+        var rootId = id(root.PackageID), rootInfo = byId[rootId];
+        if (!rootInfo || guidKey(rootInfo.guid) !== guidKey(rootGuid)) throw new Error("Racine absente de la structure SQL.");
+        var pending = [rootInfo];
+        while (pending.length) {
+            var current = pending.pop(), currentKey = guidKey(current.guid);
+            if (seenPackages[current.packageId] || index.packageInfo[currentKey]) throw new Error("Cycle ou package duplique dans la structure SQL.");
+            seenPackages[current.packageId] = true;
+            packageIds.push(current.packageId);
+            index.packageInfo[currentKey] = { Name: current.Name, carrierName: current.Name };
+            index.packages++;
+            var children = childrenByParent[current.packageId] || [];
+            for (var child = children.length - 1; child >= 0; child--) pending.push(children[child]);
+        }
+        // A package's own carrier is stored in its parent. The root carrier
+        // must be included explicitly; child carriers are covered by Package_ID.
+        elementIds.push(id(root.Element.ElementID));
         var traversedAt = new Date().getTime();
         output("Temps index | Parcours packages ms=" + (traversedAt - startedAt));
         output("Indexation SQL | Packages=" + index.packages + " | Lecture groupee des tags CHECK");
@@ -81,12 +101,18 @@ var FrameworkBA_CheckSnapshotCollector = (function () {
             var raw = sqlField(row[1], "CheckValue", false);
             if (raw === "<memo>" || raw === "") raw = sqlField(row[1], "CheckNotes", false);
             if (/^\s*$/.test(raw)) continue;
-            try { index.entries.push({ snapshot: JSON.parse(raw), carrierName: carrierName }); }
+            try {
+                var parsed = JSON.parse(raw);
+                index.entries.push({ snapshot: parsed, carrierName: carrierName });
+                var packageKey = parsed && parsed.object && guidKey(parsed.object.guid);
+                if (parsed && parsed.scope === "PACKAGE" && index.packageInfo[packageKey])
+                    index.packageInfo[packageKey].carrierName = carrierName;
+            }
             catch (error) { throw new Error("JSON CHECK invalide sur " + carrierName + ": " + error.message); }
         }
         output("Temps index | Decodage XML et JSON ms=" + (new Date().getTime() - queriedAt));
         output("Index pret | Mode=SQL | Packages parcourus=" + index.packages + " | Supports lus=" + index.reads
-            + " | Snapshots=" + index.entries.length + " | Requetes=1");
+            + " | Snapshots=" + index.entries.length + " | Requetes=2");
         return index;
     }
 

@@ -37,10 +37,13 @@ function xmlRows(){return "<?xml version=\"1.0\"?><EADATA><Dataset_0><Data>"+car
  const tag=e.TaggedValues.GetAt(0);
  return "<Row><CarrierGuid>"+esc(e.ElementGUID)+"</CarrierGuid><CarrierName>"+esc(e.Name)+"</CarrierName><CheckValue>&lt;memo&gt;</CheckValue><CheckNotes>"+(i===1?"<![CDATA["+tag.Notes+"]]>":esc(tag.Notes))+"</CheckNotes></Row>";
 }).join("")+"</Data></Dataset_0></EADATA>";}
-repo.SQLQuery=function(q){queries++;assert.match(q,/^SELECT /);assert.match(q,/o.Package_ID IN \(1,2,3\)/);assert.match(q,/o.Object_ID IN \(10,20,30\)/);return xmlRows()};
+function hierarchy(){return "<EADATA><Dataset_0><Data>"+[[1,0,"R"],[2,1,"A"],[3,1,"B"],[99,0,"OUTSIDE"]].map(([pid,parent,g])=>"<Row><PackageId>"+pid+"</PackageId><ParentId>"+parent+"</ParentId><PackageGuid>"+g+"</PackageGuid><PackageName>"+g+"</PackageName></Row>").join("")+"</Data></Dataset_0></EADATA>";}
+repo.SQLQuery=function(q){queries++;assert.match(q,/^SELECT /);if(q.includes("FROM t_package"))return hierarchy();assert.match(q,/o.Package_ID IN \(1,2,3\)/);assert.match(q,/o.Object_ID IN \(10\)/);return xmlRows()};
+const oldChildren=root.Packages;
+Object.defineProperty(root,"Packages",{configurable:true,get(){throw new Error("COM hierarchy traversal")}});
 reads=0;
 const sqlIndex=api.buildIndex("R",{repository:repo,output(){}});
-assert.equal(queries,1);assert.equal(reads,0,"SQL index must not refresh tagged value collections");
+assert.equal(queries,2);assert.equal(reads,0,"SQL index must not refresh tagged value collections");
 assert.equal(sqlIndex.mode,"SQL");assert.equal(sqlIndex.entries.length,4);
 assert.equal(JSON.stringify(api.collect("A","R",{repository:repo,index:sqlIndex,output(){}})),JSON.stringify(regular));
 const originalGet=repo.GetPackageByGuid, originalParent=repo.GetPackageByID;
@@ -53,8 +56,8 @@ const special=api.buildIndex("R",{repository:repo,output(){}});
 assert.equal(special.entries[0].snapshot.object.name,"A &lt; literal <tag> & café 😀");
 repo.SQLQuery=()=>"SQL error";
 assert.throws(()=>api.buildIndex("R",{repository:repo}),/Reponse SQL CHECK invalide/);
-repo.SQLQuery=()=>"<EADATA><Dataset_0><Data><Row><CarrierGuid>X</CarrierGuid><CheckNotes>bad JSON</CheckNotes></Row></Data></Dataset_0></EADATA>";
+repo.SQLQuery=q=>q.includes("FROM t_package")?hierarchy():"<EADATA><Dataset_0><Data><Row><CarrierGuid>X</CarrierGuid><CheckNotes>bad JSON</CheckNotes></Row></Data></Dataset_0></EADATA>";
 assert.throws(()=>api.buildIndex("R",{repository:repo}),/JSON CHECK invalide/);
-repo.SQLQuery=()=>"<EADATA><Dataset_0><Data/></Dataset_0></EADATA>";
+repo.SQLQuery=q=>q.includes("FROM t_package")?hierarchy():"<EADATA><Dataset_0><Data/></Dataset_0></EADATA>";
 assert.equal(api.buildIndex("R",{repository:repo}).entries.length,0);
-console.log("SQL batch: one read-only query, no tag refreshes, identical collection, memo/CDATA/entities preserved, invalid responses rejected");
+console.log("SQL batch: two read-only queries, no tag refreshes, identical collection, memo/CDATA/entities preserved, invalid responses rejected");
